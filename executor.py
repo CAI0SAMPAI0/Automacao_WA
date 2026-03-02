@@ -49,7 +49,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 # Importações APENAS do core (SEM GUI)
 from core.db import get_db
-from core.automation import executar_envio
+from core.automation import executar_envio, contador_execucao
 from core.logger import get_logger
 from core.paths import get_whatsapp_profile_dir
 
@@ -112,6 +112,7 @@ def main(json_path: str):
         # ===== SUCESSO =====
         if task_id:
             db.atualizar_status(task_id, "completed")
+            contador_execucao(True)
         
         logger.info("[OK] TAREFA CONCLUIDA COM SUCESSO")
         logger.info("=" * 70)

@@ -86,7 +86,6 @@ def create_windows_task(task_id, task_name, schedule_time, schedule_date=None):
 
     # Nome completo da tarefa
     task_full_name = f"AutoMessage_{task_id}"
-    
     # Comando schtasks com parâmetros diretos (NÃO precisa de admin)
     cmd = (
         f'schtasks /create '
@@ -95,7 +94,8 @@ def create_windows_task(task_id, task_name, schedule_time, schedule_date=None):
         f'/sc once '
         f'/sd {schedule_date} '
         f'/st {schedule_time} '
-        f'/rl limited '  # Executa com privilégios normais (não admin)
+        f'/rl highest '
+        f'/it '
         f'/f'  # Força criação (sobrescreve se existir)
     )
 

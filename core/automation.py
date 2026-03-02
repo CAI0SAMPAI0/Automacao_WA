@@ -51,12 +51,25 @@ def contador_execucao(incrementar=True):
 
 def iniciar_driver(userdir, modo_execucao='manual', logger=None):
     from playwright.sync_api import sync_playwright
+    import psutil
     userdir = os.path.abspath(userdir)
     os.makedirs(userdir, exist_ok=True)
 
-    #if getattr(sys, 'frozen', False) or 'nuitka' in sys.modules:
-        # Força o Playwright a usar a pasta padrão de instalação no AppData do Windows
-        #os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "0"
+    # mata o chrome que esteja com esse perfil aberto
+    if modo_execucao in ['auto', 'background']:
+        _log(logger, "Verificando processos Chrome conflitantes...")
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                nome = proc.info['name'] or ''
+                cmd = ' '.join(proc.info['cmdline'] or [])
+                if ('chrome' in nome.lower() or 'msedge' in nome.lower()) and userdir in cmd:
+                    _log(logger, f"⚠️ Encerrando Chrome conflitante (PID {proc.pid})")
+                    proc.terminate()
+                    proc.wait(timeout=5)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                continue
+        time.sleep(2)  # aguarda o Chrome liberar o perfil
+
     _log(logger, f"Iniciando Playwright | Perfil: {userdir}")
     _log(logger, f"Modo de execução: {modo_execucao}")
     pw = sync_playwright().start()
@@ -76,7 +89,7 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
     ]
     
     if is_auto:
-        browser_args.extend(['--window-position=-2400,-2400', '--force-device-scale-factor=0.90','--window-size=1366,768', '--high-dpi-support=1'])
+        browser_args.extend(['--window-position=-2400,-2400', '--force-device-scale-factor=0.70','--window-size=1366,768', '--high-dpi-support=1'])
 
     chromium_path = get_chrome_path()
     _log(logger, f"Chrome path: {chromium_path}")
@@ -104,7 +117,9 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
     page.set_default_timeout(120000)
     try:
         page.goto("https://web.whatsapp.com")
-        page.wait_for_selector('div[data-tab="3"]', timeout=120000)
+        time.sleep(2)
+        page.wait_for_selector('input[data-tab="3"], div[contenteditable="true"][data-tab="3"]',
+        timeout=120000)
         _log(logger, "✓ WhatsApp carregado.")
     except Exception as e:
         if is_auto: 
@@ -292,10 +307,31 @@ def executar_envio(userdir, target, mode, message=None, file_path=None, logger=N
     
     try:
         pw, context, page = iniciar_driver(userdir, modo_execucao, logger)
-        
-        search_box = page.locator('div[contenteditable="true"][data-tab="3"]')
+        seletores_search = [
+            'input[data-tab="3"]',
+            '#_r_9_',
+            'input[aria-label="Pesquisar ou começar uma nova conversa"]', # PT
+            'input[aria-label="Search or start new chat"]', # EN
+            'div[contenteditable="true"][data-tab="3"]', # antigo 
+        ]
+        search_box = None
+        for sel in seletores_search:
+            try:
+                el = page.locator(sel).first
+                el.wait_for(state='visible', timeout=10000)
+                search_box = el
+                _log(logger, f'Caixa de pesquisa encontrada: {sel}')
+                break
+            except:
+                continue
+
+        if not search_box:
+            raise Exception('Campo de pesquisa do WhatsApp não encontrado.')
+
+        search_box.click()
+        time.sleep(1)
         search_box.fill(target)
-        time.sleep(5)
+        time.sleep(3)
         page.keyboard.press("Enter")
         time.sleep(5)
 
@@ -315,8 +351,15 @@ def executar_envio(userdir, target, mode, message=None, file_path=None, logger=N
         _log(logger, f"❌ Falha no processo: {str(e)}")
         raise e
     finally:
-        if context: context.close()
+        try:
+            if context:
+                for page in context.pages: page.close()
+        except:
+            pass
         if pw: pw.stop()
+    #finally:
+        #if context: context.close()
+        #if pw: pw.stop()
 
 def run_auto(json_path):
     if not os.path.exists(json_path): return
