@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
 import subprocess
-from playwright.sync_api import sync_playwright
+#from playwright.sync_api import sync_playwright
 
 # ===== PROTEÇÃO CRÍTICA: BLOQUEIA GUI EM MODO EXECUTOR =====
 if os.environ.get("EXECUTOR_MODE") == "1":
@@ -18,10 +18,15 @@ def assegurar_navegador():
     if "--parent-process" in sys.argv or "install" in sys.argv:
         return
     
-    try:
-        with sync_playwright() as p:
-            p.chromium.launch(headless=True).close()
-    except Exception:
+    # Checa só o arquivo, sem lançar navegador
+    caminhos_chromium = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ]
+    navegador_existe = any(os.path.exists(c) for c in caminhos_chromium)
+
+    if not navegador_existe:
         # Criar uma janela de aviso temporária
         root = tk.Tk()
         root.title("Study Practices - Configuração")

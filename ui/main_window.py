@@ -278,8 +278,10 @@ class App(ctk.CTk):
         self.file_label = ctk.CTkLabel(file_frame, text="Nenhum arquivo", font=("Roboto", 10), text_color=self.colors["gray"])
         self.file_label.pack(side="left", padx=10)
 
+        # --- Linha de Data/Hora + Checkbox "Todos os dias" ---
         dt_frame = ctk.CTkFrame(action_box, fg_color="transparent")
         dt_frame.pack(fill="x", padx=10, pady=(0, 10))
+
         self.date_button = ctk.CTkButton(dt_frame, text=datetime.now().strftime("%d/%m/%Y"), 
                                        fg_color=self.colors["primary"], hover_color=self.colors["hover"], 
                                        command=lambda: self._abrir_calendario_custom(self.date_button))
@@ -289,6 +291,18 @@ class App(ctk.CTk):
         self.time_input.pack(side="left")
         self.time_input.bind("<KeyRelease>", self._aplicar_mascara_hora)
         self._reset_time()
+
+        # ── NOVO: Checkbox "Todos os dias" ──
+        self.daily_var = ctk.BooleanVar(value=False)
+        self.daily_checkbox = ctk.CTkCheckBox(
+            dt_frame,
+            text="Todos os dias",
+            variable=self.daily_var,
+            fg_color=self.colors["primary"],
+            hover_color=self.colors["hover"],
+            command=self._on_daily_toggle
+        )
+        self.daily_checkbox.pack(side="left", padx=(12, 0))
 
         # Botões de Ação
         actions_frame = ctk.CTkFrame(tab, fg_color="transparent")
@@ -302,6 +316,59 @@ class App(ctk.CTk):
         ctk.CTkButton(actions_frame, text="Agendar", height=45, 
                       fg_color=self.colors["primary"], hover_color=self.colors["hover"], 
                       command=self._schedule_task).pack(side="left", expand=True, padx=5)
+
+    def _on_daily_toggle(self):
+        """Quando 'Todos os dias' é marcado, esconde o seletor de data (não faz sentido para recorrente)."""
+        if self.daily_var.get():
+            self.date_button.configure(state="disabled", fg_color=self.colors["text_disabled"])
+        else:
+            self.date_button.configure(state="normal", fg_color=self.colors["primary"])
+
+    def _perguntar_fins_de_semana(self):
+        """
+        Abre uma janela modal perguntando se o envio inclui sábado e domingo.
+        Retorna True (incluir) ou False (somente dias úteis).
+        """
+        resultado = {"include": None}
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Fins de semana?")
+        dialog.geometry("340x160")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.grab_set()
+        self._aplicar_icone(dialog)
+
+        ctk.CTkLabel(
+            dialog,
+            text="Enviar também aos sábados e domingos?",
+            font=("Roboto", 13),
+            wraplength=300
+        ).pack(pady=(25, 15), padx=20)
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack()
+
+        def escolher(include):
+            resultado["include"] = include
+            dialog.grab_release()
+            dialog.destroy()
+
+        ctk.CTkButton(
+            btn_frame, text="Sim", width=120,
+            fg_color=self.colors["primary"], hover_color=self.colors["hover"],
+            command=lambda: escolher(True)
+        ).pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            btn_frame, text="Não (Seg–Sex)", width=140,
+            fg_color=self.colors["gray"], hover_color="#555555",
+            command=lambda: escolher(False)
+        ).pack(side="left", padx=10)
+
+        # Aguarda o dialog fechar
+        self.wait_window(dialog)
+        return resultado["include"]
 
     def _setup_placeholder(self, textbox, placeholder_text):
         """Lógica para placeholder em caixa de texto multiline"""
@@ -345,7 +412,8 @@ class App(ctk.CTk):
         self.mode_select.set("Somente texto")
         self._on_mode_change("Somente texto")
         self._reset_time()
-        self.date_button.configure(text=datetime.now().strftime("%d/%m/%Y"))
+        self.date_button.configure(text=datetime.now().strftime("%d/%m/%Y"), state="normal", fg_color=self.colors["primary"])
+        self.daily_var.set(False)
 
     # =========================================
     #            LÓGICA: VALIDAÇÃO E AÇÕES
@@ -500,9 +568,10 @@ class App(ctk.CTk):
         message = self.message_input.get("1.0", "end-1c").strip()
         mode = self._get_mode_key()
         d, t = self.date_button.cget("text"), self.time_input.get().strip()
-        
-        if not self._validar_campos(target, mode, message, self.file_path): '''return
-        if len(t) != 5: return messagebox.showerror("Erro", "Hora incompleta. Use HH:MM")'''
+        is_daily = self.daily_var.get()
+
+        if not self._validar_campos(target, mode, message, self.file_path):
+            return
         
         if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', t):
             return messagebox.showerror(
@@ -510,9 +579,22 @@ class App(ctk.CTk):
                 "Hora inválida. Use formato HH:MM (00:00 a 23:59)"
             )
 
+        # ── NOVO: se for diário, pergunta sobre fins de semana antes de continuar ──
+        include_weekends = None
+        if is_daily:
+            include_weekends = self._perguntar_fins_de_semana()
+            if include_weekends is None:
+                # Usuário fechou o dialog sem escolher
+                return
+
         try:
-            dt = datetime.strptime(f"{d} {t}", "%d/%m/%Y %H:%M")
-            if dt < datetime.now(): return messagebox.showerror("Erro", "O horário deve ser no futuro.")
+            if is_daily:
+                # Para agendamento diário usa a data de hoje como referência
+                dt = datetime.strptime(f"{datetime.now().strftime('%d/%m/%Y')} {t}", "%d/%m/%Y %H:%M")
+            else:
+                dt = datetime.strptime(f"{d} {t}", "%d/%m/%Y %H:%M")
+                if dt < datetime.now():
+                    return messagebox.showerror("Erro", "O horário deve ser no futuro.")
             
             task_name = f"ZapTask_{int(datetime.now().timestamp())}"
             t_id = db.adicionar(task_name=task_name, target=target, mode=mode, message=message, 
@@ -521,22 +603,35 @@ class App(ctk.CTk):
             if not t_id or t_id == -1:
                 return messagebox.showerror("Erro", "Falha ao salvar no banco de dados")
             
-            # Criação da tarefa também em thread para garantir fluidez
-            threading.Thread(target=self._criar_tarefa_agendada, 
-                             args=(t_id, task_name, target, mode, message, self.file_path, t, d),
-                             daemon=True).start()
+            # Passa os novos parâmetros de recorrência para a thread
+            threading.Thread(
+                target=self._criar_tarefa_agendada, 
+                args=(t_id, task_name, target, mode, message, self.file_path, t, d,
+                      is_daily, include_weekends),
+                daemon=True
+            ).start()
+
         except Exception as e: 
             messagebox.showerror("Erro", str(e))
 
-    def _criar_tarefa_agendada(self, t_id, task_name, target, mode, message, file_path, time_str, date_str):
+    def _criar_tarefa_agendada(self, t_id, task_name, target, mode, message, file_path,
+                                time_str, date_str, daily=False, include_weekends=True):
         try:
             from core import windows_scheduler
             json_cfg = {"target": target, "mode": mode, "message": message, "file_path": file_path}
             windows_scheduler.create_task_bat(t_id, task_name, json_cfg)
-            suc, msg = windows_scheduler.create_windows_task(t_id, task_name, time_str, date_str)
+            suc, msg = windows_scheduler.create_windows_task(
+                t_id, task_name, time_str, date_str,
+                daily=daily, include_weekends=include_weekends
+            )
             
             if suc:
-                self.after(0, lambda: messagebox.showinfo("Agendado", "Tarefa criada com sucesso!"))
+                if daily:
+                    modo_txt = "todos os dias" if include_weekends else "dias úteis (Seg–Sex)"
+                    info_msg = f"Tarefa recorrente criada!\nEnvio: {time_str} | {modo_txt}"
+                else:
+                    info_msg = "Tarefa criada com sucesso!"
+                self.after(0, lambda: messagebox.showinfo("Agendado", info_msg))
                 self.after(0, self._carregar_agendamentos)
                 self.after(0, self._reset_fields)
             else:
@@ -675,7 +770,7 @@ class App(ctk.CTk):
 
         edit_win = ctk.CTkToplevel(self)
         edit_win.title("Editar Agendamento")
-        edit_win.geometry("420x720")
+        edit_win.geometry("420x780")
         self._aplicar_icone(edit_win)
         edit_win.transient(self)
         edit_win.lift(); edit_win.focus_force()
@@ -720,15 +815,36 @@ class App(ctk.CTk):
         ctk.CTkLabel(edit_win, text="Data e Horário:").pack(pady=5)
         dt_fr = ctk.CTkFrame(edit_win, fg_color="transparent")
         dt_fr.pack()
-        
+
+        # ── NOVO: Variável de controle para "todos os dias" na edição ──
+        edit_daily_var = ctk.BooleanVar(value=False)
+
         btn_date = ctk.CTkButton(dt_fr, text=dt_original.strftime("%d/%m/%Y"), width=120, 
-                               fg_color=self.colors["primary"], hover_color=self.colors["hover"], command=lambda: self._abrir_calendario_custom(btn_date))
+                               fg_color=self.colors["primary"], hover_color=self.colors["hover"],
+                               command=lambda: self._abrir_calendario_custom(btn_date))
         btn_date.pack(side="left", padx=5)
         
         time_ent = ctk.CTkEntry(dt_fr, width=80)
         time_ent.insert(0, dt_original.strftime("%H:%M"))
         time_ent.pack(side="left", padx=5)
         time_ent.bind("<KeyRelease>", self._aplicar_mascara_hora)
+
+        # ── NOVO: Checkbox "Todos os dias" na janela de edição ──
+        def _toggle_edit_daily():
+            if edit_daily_var.get():
+                btn_date.configure(state="disabled", fg_color=self.colors["text_disabled"])
+            else:
+                btn_date.configure(state="normal", fg_color=self.colors["primary"])
+
+        edit_daily_cb = ctk.CTkCheckBox(
+            dt_fr,
+            text="Todos os dias",
+            variable=edit_daily_var,
+            fg_color=self.colors["primary"],
+            hover_color=self.colors["hover"],
+            command=_toggle_edit_daily
+        )
+        edit_daily_cb.pack(side="left", padx=(8, 0))
 
         # Lógica de Arquivo
         def atualizar_lbl_file():
@@ -754,21 +870,45 @@ class App(ctk.CTk):
                 m_val = rev_map.get(mode_select.get())
                 msg_val = msg_txt.get("1.0", "end-1c").strip()
                 h_val = time_ent.get().strip()
-                
+                is_daily_edit = edit_daily_var.get()
+
                 if not self._validar_campos(t_val, m_val, msg_val, self.temp_edit_file): return
                 if len(h_val) != 5: return messagebox.showerror("Erro", "Hora inválida")
-                
-                nova_dt = datetime.strptime(f"{btn_date.cget('text')} {h_val}", "%d/%m/%Y %H:%M")
-                if nova_dt < datetime.now(): return messagebox.showerror("Erro", "Data no passado")
+
+                # ── NOVO: pergunta fins de semana se for recorrente ──
+                include_wk = None
+                if is_daily_edit:
+                    include_wk = self._perguntar_fins_de_semana()
+                    if include_wk is None:
+                        return  # Usuário cancelou
+
+                if is_daily_edit:
+                    nova_dt = datetime.strptime(
+                        f"{datetime.now().strftime('%d/%m/%Y')} {h_val}", "%d/%m/%Y %H:%M"
+                    )
+                else:
+                    nova_dt = datetime.strptime(f"{btn_date.cget('text')} {h_val}", "%d/%m/%Y %H:%M")
+                    if nova_dt < datetime.now():
+                        return messagebox.showerror("Erro", "Data no passado")
 
                 windows_scheduler.delete_windows_task(task_data['id'])
                 db.atualizar_agendamento_completo(task_data['id'], t_val, m_val, msg_val, self.temp_edit_file, nova_dt)
                 
                 json_cfg = {"target": t_val, "mode": m_val, "message": msg_val, "file_path": self.temp_edit_file}
                 windows_scheduler.create_task_bat(task_data['id'], task_data['task_name'], json_cfg)
-                windows_scheduler.create_windows_task(task_data['id'], task_data['task_name'], h_val, btn_date.cget('text'))
+                windows_scheduler.create_windows_task(
+                    task_data['id'], task_data['task_name'], h_val,
+                    btn_date.cget('text'),
+                    daily=is_daily_edit,
+                    include_weekends=include_wk if include_wk is not None else True
+                )
 
-                messagebox.showinfo("Sucesso", "Atualizado!")
+                if is_daily_edit:
+                    modo_txt = "todos os dias" if include_wk else "dias úteis (Seg–Sex)"
+                    messagebox.showinfo("Sucesso", f"Atualizado!\nRecorrência: {modo_txt}")
+                else:
+                    messagebox.showinfo("Sucesso", "Atualizado!")
+
                 edit_win.destroy()
                 self._carregar_agendamentos()
             except Exception as e:
