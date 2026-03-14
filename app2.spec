@@ -1,12 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""
-app.spec — PyInstaller (onefile) para Study Practices com PyWebView
-"""
 
 import os
-from pathlib import Path
 
-# ── pastas a incluir ─────────────────────────────────────────────
 datas_list = []
 for folder in ['ui', 'core', 'data', 'resources']:
     if os.path.exists(folder):
@@ -15,24 +10,16 @@ for folder in ['ui', 'core', 'data', 'resources']:
 if os.path.exists('executor.py'):
     datas_list.append(('executor.py', '.'))
 
-# ── imports ocultos necessários para PyWebView ───────────────────
-hidden = [
-    'playwright.sync_api',
-    'webview',
-    'webview.platforms.winforms',   # Windows
-    'clr',                          # pythonnet (PyWebView no Windows)
-]
-
 a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
     datas=datas_list,
-    hiddenimports=hidden,
+    hiddenimports=['playwright.sync_api'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'customtkinter', 'tkcalendar'],  # não precisamos mais
+    excludes=[],
     noarchive=False,
     optimize=0,
 )
@@ -41,8 +28,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    a.binaries,    # <- incluído direto no EXE (onefile)
+    a.datas,       # <- incluído direto no EXE (onefile)
     [],
     name='Study_Practices',
     debug=False,
@@ -50,7 +37,7 @@ exe = EXE(
     strip=False,
     upx=True,
     upx_exclude=[],
-    console=False,          # sem janela de terminal
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -58,21 +45,24 @@ exe = EXE(
     entitlements_file=None,
     uac_admin=True,
     icon=['resources\\Taty_s-English-Logo.ico'],
+    # ONEFILE: empacota tudo em um único .exe
+    # sys.executable aponta para o .exe real -> get_app_base_dir() funciona corretamente
 )
 
-# ── remove navegadores do Playwright (economiza ~300 MB) ─────────
+# ===== REMOVE NAVEGADORES DO PLAYWRIGHT (REDUZ 300+ MB) =====
 import shutil
 from pathlib import Path
 
+# Em onefile, o PyInstaller extrai para dist/ diretamente
 dist_path = Path('dist/_internal')
 if not dist_path.exists():
     dist_path = Path('dist')
 
 playwright_browsers = dist_path / 'playwright' / 'driver' / 'package' / '.local-browsers'
 if playwright_browsers.exists():
-    print(f"\n🗑️  Removendo navegadores Playwright ({playwright_browsers})...")
+    print(f"\n🗑️  REMOVENDO navegadores do Playwright ({playwright_browsers})...")
     try:
         shutil.rmtree(playwright_browsers)
-        print("✅ Navegadores removidos! (~300 MB economizados)")
+        print("✅ Navegadores removidos! (~300MB economizados)")
     except Exception as e:
         print(f"⚠️  Aviso ao remover navegadores: {e}")

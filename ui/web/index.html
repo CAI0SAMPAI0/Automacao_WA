@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Practices</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <div id="app">
+
+    <!-- ── HEADER ── -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon"><img src="logo.png"
+            style="width:34px;height:34px;object-fit:contain;border-radius:8px;" /></div>
+      <div class="logo-name">Study <span>Practices</span></div>
+  </div>
+  <div class="badge-count">
+    <span class="dot"></span>
+    <span id="execCount">0</span> envios
+  </div>
+  </header>
+
+  <!-- ── TABS ── -->
+  <div class="tabs">
+    <button class="tab active" data-tab="envio">Novo Envio</button>
+    <button class="tab" data-tab="agenda">Meus Agendamentos</button>
+  </div>
+
+  <!-- ── PANELS ── -->
+  <div class="panels">
+
+    <!-- PANEL: ENVIO -->
+    <div id="panel-envio" class="panel active">
+
+      <div class="field">
+        <label>Contato / Número</label>
+        <input id="target" type="text" placeholder="Ex: 5511999999999 ou nome do grupo" />
+      </div>
+
+      <div class="field">
+        <label>Tipo de envio</label>
+        <div class="mode-pills">
+          <div class="mode-pill active" data-mode="text">Só texto</div>
+          <div class="mode-pill" data-mode="file">Só arquivo</div>
+          <div class="mode-pill" data-mode="file_text">Arquivo + texto</div>
+        </div>
+      </div>
+
+      <div class="field" id="msg-field">
+        <label>Mensagem</label>
+        <textarea id="message" placeholder="Digite sua mensagem aqui..."></textarea>
+      </div>
+
+      <div class="file-area disabled" id="fileArea">
+        <div class="file-icon">📎</div>
+        <div class="file-info">
+          <div class="file-title">Selecionar arquivo(s)</div>
+          <div class="file-sub" id="fileLabel">Nenhum arquivo selecionado</div>
+        </div>
+      </div>
+
+      <div class="dt-row">
+        <div class="field">
+          <label>Data</label>
+          <input type="date" id="dateInput" />
+        </div>
+        <div class="field time-field">
+          <label>Hora</label>
+          <input type="text" id="timeInput" maxlength="5" placeholder="HH:MM" />
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <label for="dailyToggle">Enviar todos os dias (recorrente)</label>
+        <div class="toggle">
+          <input type="checkbox" id="dailyToggle" />
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnEnviar" onclick="handleEnviarAgora()">
+          <span class="spinner"></span>
+          <span class="btn-label">Enviar agora</span>
+        </button>
+        <button class="btn btn-primary" id="btnAgendar" onclick="handleAgendar()">
+          <span class="spinner"></span>
+          <span class="btn-label">Agendar</span>
+        </button>
+      </div>
+
+    </div><!-- /panel-envio -->
+
+    <!-- PANEL: AGENDA -->
+    <div id="panel-agenda" class="panel">
+      <div class="agenda-header">
+        <span class="agenda-title">Histórico</span>
+        <span class="sync-badge" id="syncBadge">atualizando...</span>
+      </div>
+      <div id="cardList"></div>
+    </div>
+
+  </div><!-- /panels -->
+  </div><!-- /app -->
+
+  <!-- ── TOAST ── -->
+  <div id="toast-container"></div>
+
+  <!-- ── MODAL: FINS DE SEMANA ── -->
+  <div class="modal-overlay" id="modalWk">
+    <div class="modal">
+      <div class="modal-title">Enviar nos fins de semana?</div>
+      <div class="wk-picker">
+        <div class="wk-opt" onclick="resolveWk(true)">
+          <span class="wk-ico">📅</span>
+          <span class="wk-label">Todos os dias</span>
+        </div>
+        <div class="wk-opt" onclick="resolveWk(false)">
+          <span class="wk-ico">💼</span>
+          <span class="wk-label">Seg – Sex</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL: EDITAR ── -->
+  <div class="modal-overlay" id="modalEdit">
+    <div class="modal">
+      <div class="modal-title">Editar agendamento</div>
+
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div class="field">
+          <label>Contato</label>
+          <input id="editTarget" type="text" />
+        </div>
+        <div class="field">
+          <label>Tipo de envio</label>
+          <select id="editMode">
+            <option value="text">Só texto</option>
+            <option value="file">Só arquivo</option>
+            <option value="file_text">Arquivo + texto</option>
+          </select>
+        </div>
+        <div class="field" id="editMsgField">
+          <label>Mensagem</label>
+          <textarea id="editMessage"></textarea>
+        </div>
+        <div class="file-area" id="editFileArea" onclick="handleEditFile()">
+          <div class="file-icon">📎</div>
+          <div class="file-info">
+            <div class="file-title">Alterar arquivo(s)</div>
+            <div class="file-sub" id="editFileLabel">—</div>
+          </div>
+        </div>
+        <div class="dt-row">
+          <div class="field">
+            <label>Data</label>
+            <input type="date" id="editDate" />
+          </div>
+          <div class="field time-field">
+            <label>Hora</label>
+            <input type="text" id="editTime" maxlength="5" placeholder="HH:MM" />
+          </div>
+        </div>
+        <div class="toggle-row">
+          <label for="editDaily">Todos os dias</label>
+          <div class="toggle">
+            <input type="checkbox" id="editDaily" />
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" style="flex:.4" onclick="closeEditModal()">Cancelar</button>
+        <button class="btn btn-primary" id="btnSalvarEdit" onclick="handleSalvarEdit()">
+          <span class="spinner"></span>
+          <span class="btn-label">Salvar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

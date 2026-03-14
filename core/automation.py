@@ -64,11 +64,11 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
                 cmd = ' '.join(proc.info['cmdline'] or [])
                 if ('chrome' in nome.lower() or 'msedge' in nome.lower()) and userdir in cmd:
                     _log(logger, f"⚠️ Encerrando Chrome conflitante (PID {proc.pid})")
-                    proc.terminate()
-                    proc.wait(timeout=5)
+                    proc.kill()
+                    proc.wait(timeout=10)
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
                 continue
-        time.sleep(2)  # aguarda o Chrome liberar o perfil
+        time.sleep(4)  # aguarda o Chrome liberar o perfil
 
     _log(logger, f"Iniciando Playwright | Perfil: {userdir}")
     _log(logger, f"Modo de execução: {modo_execucao}")

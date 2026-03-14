@@ -102,7 +102,7 @@ class SchedulerDB:
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.close()
 
-        print(f"✓ Database inicializado: {self.db_path}")
+        print(f"[OK] Database inicializado: {self.db_path}")
 
     # =============================
     # CREATE
@@ -148,7 +148,7 @@ class SchedulerDB:
             task_id = cur.lastrowid
             self._force_sync(conn)
 
-            print(f"✓ Agendamento criado: ID={task_id}, task_name={task_name}")
+            print(f"[OK] Agendamento criado: ID={task_id}, task_name={task_name}")
             return task_id
 
         except sqlite3.IntegrityError as e:
@@ -312,7 +312,7 @@ class SchedulerDB:
         if cur.rowcount == 0:
             print(f"[DB] ⚠️ AVISO: Nenhuma linha foi atualizada! Identificador pode estar errado.")
         else:
-            print(f"[DB] ✓ {cur.rowcount} linha(s) atualizada(s)")
+            print(f"[DB] [OK] {cur.rowcount} linha(s) atualizada(s)")
 
         # ✅ Commit e sincronização
         conn.commit()
@@ -335,13 +335,13 @@ class SchedulerDB:
         if row:
             status_verificado = row[0]
             if status_verificado == status:
-                print(f"[DB] ✓✓ VERIFICAÇÃO OK: Status confirmado como '{status}'")
+                print(f"[DB] [OK] VERIFICAÇÃO OK: Status confirmado como '{status}'")
             else:
-                print(f"[DB] ❌ ERRO: Status está '{status_verificado}' mas deveria ser '{status}'")
+                print(f"[DB]  ERRO: Status está '{status_verificado}' mas deveria ser '{status}'")
         else:
-            print(f"[DB] ❌ ERRO: Registro não encontrado na verificação!")
+            print(f"[DB]  ERRO: Registro não encontrado na verificação!")
 
-        print(f"✓ Status atualizado: {identificador} → {status}")
+        print(f"[OK] Status atualizado: {identificador} → {status}")
 
     # =============================
     # DELETE
@@ -367,7 +367,7 @@ class SchedulerDB:
         self._force_sync(conn)
         conn.close()
 
-        print(f"✓ Agendamento deletado: {identificador}")
+        print(f"[OK] Agendamento deletado: {identificador}")
 
     # =============================
     # UTILITÁRIOS
