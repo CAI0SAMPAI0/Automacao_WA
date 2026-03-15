@@ -108,6 +108,7 @@ def main(json_path: str):
             logger=logger,
             modo_execucao=modo_execucao
         )
+        #contador_execucao(True)
         
         # ===== SUCESSO =====
         if task_id:
