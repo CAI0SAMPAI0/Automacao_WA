@@ -44,6 +44,7 @@ function init() {
   setupTimeInput('timeInput');
   setupTimeInput('editTime');
   setupTimeInput('loteTimeInput');
+  setupTimeInput('editLoteTime');
   setupEditModeWatch();
   setupCardDelegation();
   refreshCount();
@@ -56,12 +57,15 @@ function setupCardDelegation() {
   document.getElementById('cardList').addEventListener('click', function(e) {
     const btn = e.target.closest('[data-action]');
     if (!btn || btn.disabled) return;
-    const action = btn.dataset.action;
-    const id     = parseInt(btn.dataset.id);
-    const target = btn.dataset.target || '';
-    if (action === 'edit')   openEdit(id);
-    if (action === 'delete') handleDelete(id, target);
-    if (action === 'retry')  handleReenviar(id);
+    const action  = btn.dataset.action;
+    const id      = parseInt(btn.dataset.id);
+    const target  = btn.dataset.target || '';
+    const batchId = btn.dataset.batch || '';
+    if (action === 'edit')        openEdit(id);
+    if (action === 'delete')      handleDelete(id, target);
+    if (action === 'retry')       handleReenviar(id);
+    if (action === 'edit-lote')   openEditLote(batchId);
+    if (action === 'delete-lote') handleDeleteLote(batchId, target);
   });
 }
 
@@ -542,8 +546,8 @@ function resolveWk(v) {
 
 /* ══════════════════════════════════════════
    CARDS DE AGENDAMENTOS
-   Todos os status são editáveis
-   Lote agrupa por batch_id com card expansível
+   — simples: card individual
+   — lote: card agrupado expansível
 ══════════════════════════════════════════ */
 async function loadCards() {
   const badge = document.getElementById('syncBadge');
@@ -551,40 +555,66 @@ async function loadCards() {
     badge.className = 'sync-badge'; badge.textContent = 'atualizando...';
     const r    = await pywebview.api.listar_agendamentos();
     const list = r.agendamentos || [];
-    const container   = document.getElementById('cardList');
-    const existingIds = new Set([...container.querySelectorAll('.card')].map(c=>+c.dataset.id));
-    const newIds      = new Set(list.map(a=>a.id));
-
-    existingIds.forEach(id => {
-      if (!newIds.has(id)) { const el=container.querySelector(`[data-id="${id}"]`); if(el)el.remove(); }
-    });
+    const container = document.getElementById('cardList');
 
     if (!list.length) {
       if (!container.querySelector('.no-items'))
         container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
+      container.dataset.lastKey = '';
     } else {
-      const ni = container.querySelector('.no-items'); if(ni) ni.remove();
-      list.forEach(a => {
-        const existing = container.querySelector(`[data-id="${a.id}"]`);
-        if (existing) {
-          if (cardStates[a.id] !== a.status) {
-            existing.querySelector('.card-badge').className   = 'card-badge '+statusBadgeClass(a.status);
-            existing.querySelector('.card-badge').textContent = statusLabel(a.status);
-            // todos os status são editáveis agora
+      // chave de detecção de mudança por item
+      const newKey = list.map(a => {
+        const k = a.batch_id || String(a.id);
+        return k + ':' + a.status;
+      }).join('|');
+
+      if (container.dataset.lastKey !== newKey) {
+        container.dataset.lastKey = newKey;
+
+        // remove cards que não existem mais
+        const ni = container.querySelector('.no-items');
+        if (ni) ni.remove();
+
+        const existingCards = new Map();
+        container.querySelectorAll('[data-id],[data-batch]').forEach(el => {
+          const k = el.dataset.batch || el.dataset.id;
+          existingCards.set(k, el);
+        });
+
+        const newKeys = new Set(list.map(a => String(a.batch_id || a.id)));
+        existingCards.forEach((el, k) => { if (!newKeys.has(k)) el.remove(); });
+
+        // insere ou atualiza cada item mantendo a ordem
+        list.forEach((a, idx) => {
+          const key      = String(a.batch_id || a.id);
+          const existing = existingCards.get(key);
+          const html     = a.is_lote ? renderLoteCard(a) : renderCard(a);
+
+          if (!existing) {
+            // novo card — insere na posição correta
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            const newEl = tmp.firstElementChild;
+            const allCards = [...container.children];
+            if (idx >= allCards.length) container.appendChild(newEl);
+            else container.insertBefore(newEl, allCards[idx]);
+          } else {
+            // card existente — atualiza apenas o badge e botões sem recriar
+            const badge = existing.querySelector('.card-badge');
+            if (badge && badge.textContent !== statusLabel(a.status)) {
+              badge.className   = 'card-badge ' + statusBadgeClass(a.status);
+              badge.textContent = statusLabel(a.status);
+            }
             const running = a.status === 'running';
-            const eb = existing.querySelector('.card-btn-edit');
-            const db = existing.querySelector('.card-btn-del');
-            const rb = existing.querySelector('.card-btn-retry');
-            if (eb) eb.disabled = running;
-            if (db) db.disabled = running;
-            if (rb) rb.style.display = a.status==='failed' ? 'inline-flex' : 'none';
-            cardStates[a.id] = a.status;
+            existing.querySelectorAll('[data-action="edit"],[data-action="edit-lote"]')
+              .forEach(b => b.disabled = running);
+            existing.querySelectorAll('[data-action="delete"],[data-action="delete-lote"]')
+              .forEach(b => b.disabled = running);
+            const rb = existing.querySelector('[data-action="retry"]');
+            if (rb) rb.style.display = a.status === 'failed' ? 'inline-flex' : 'none';
           }
-        } else {
-          container.insertAdjacentHTML('beforeend', renderCard(a));
-          cardStates[a.id] = a.status;
-        }
-      });
+        });
+      }
     }
     const now = new Date();
     badge.className='sync-badge ok';
@@ -606,11 +636,48 @@ function renderCard(a) {
     <span class="card-badge ${statusBadgeClass(a.status)}">${statusLabel(a.status)}</span>
   </div>
   <div class="card-actions">
-    <button class="card-btn card-btn-edit" ${running?'disabled':''} data-action="edit" data-id="${a.id}">✏ Editar</button>
-    <button class="card-btn card-btn-retry" style="display:${failed?'inline-flex':'none'}" data-action="retry" data-id="${a.id}">🔁 Reenviar</button>
-    <button class="card-btn card-btn-del"  ${running?'disabled':''} data-action="delete" data-id="${a.id}" data-target="${esc(a.target)}">🗑 Excluir</button>
+    <button class="card-btn card-btn-edit"  ${running?'disabled':''} data-action="edit"   data-id="${a.id}">✏ Editar</button>
+    <button class="card-btn card-btn-retry" style="display:${failed?'inline-flex':'none'}" data-action="retry"  data-id="${a.id}">🔁 Reenviar</button>
+    <button class="card-btn card-btn-del"   ${running?'disabled':''} data-action="delete" data-id="${a.id}" data-target="${esc(a.target)}">🗑 Excluir</button>
   </div>
 </div>`;
+}
+
+function renderLoteCard(a) {
+  const running = a.status === 'running';
+  const itensHtml = (a.itens||[]).map(item => `
+    <div class="lote-item-row">
+      <span class="lote-item-target">📱 ${esc(item.target)}</span>
+      <span class="lote-item-mode">${modeLabel(item.mode)}</span>
+      <span class="card-badge ${statusBadgeClass(item.status)}" style="font-size:9px">${statusLabel(item.status)}</span>
+    </div>`).join('');
+  return `<div class="card card-lote" data-batch="${esc(a.batch_id)}">
+  <div class="card-top" onclick="toggleLoteCard(this)" style="cursor:pointer">
+    <div>
+      <div class="card-target">📦 ${esc(a.target)}</div>
+      <div class="card-date">📅 ${esc(a.scheduled_time)} &nbsp;·&nbsp; ${a.count} destinatário(s)</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="card-badge ${statusBadgeClass(a.status)}">${statusLabel(a.status)}</span>
+      <span class="lote-chevron">▾</span>
+    </div>
+  </div>
+  <div class="lote-items-body" style="display:none">
+    ${itensHtml}
+  </div>
+  <div class="card-actions">
+    <button class="card-btn card-btn-edit"  ${running?'disabled':''} data-action="edit-lote"   data-batch="${esc(a.batch_id)}">✏ Editar lote</button>
+    <button class="card-btn card-btn-del"   ${running?'disabled':''} data-action="delete-lote" data-batch="${esc(a.batch_id)}" data-target="${esc(a.target)}">🗑 Excluir lote</button>
+  </div>
+</div>`;
+}
+
+function toggleLoteCard(headerEl) {
+  const body = headerEl.nextElementSibling;
+  const chevron = headerEl.querySelector('.lote-chevron');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (chevron) chevron.textContent = open ? '▴' : '▾';
 }
 
 function statusBadgeClass(s) {
@@ -774,4 +841,109 @@ function toast(msg, type='info') {
   const el = document.createElement('div');
   el.className=`toast ${type}`; el.textContent=msg; c.appendChild(el);
   setTimeout(()=>{ el.classList.add('fade-out'); setTimeout(()=>el.remove(),320); },3500);
+}
+
+/* ══════════════════════════════════════════
+   EDITAR / EXCLUIR LOTE
+══════════════════════════════════════════ */
+var editLoteBatchId  = null;
+var editLoteItens    = [];
+var isEditLoteDailyOn = false;
+
+async function openEditLote(batchId) {
+  const r = await pywebview.api.obter_lote(batchId);
+  if (r.error) { toast(r.error, 'error'); return; }
+  editLoteBatchId = batchId;
+  editLoteItens   = r.itens;
+
+  // preenche data/hora
+  document.getElementById('editLoteDate').value = r.date_str || '';
+  document.getElementById('editLoteTime').value = r.time_str || '';
+  isEditLoteDailyOn = false;
+  document.getElementById('editLoteDailyUI').classList.remove('on');
+
+  // renderiza itens
+  renderEditLoteItens();
+  document.getElementById('modalEditLote').classList.add('open');
+}
+
+function renderEditLoteItens() {
+  const c = document.getElementById('editLoteItens');
+  c.innerHTML = editLoteItens.map((item, i) => `
+<div class="lote-card" style="margin-bottom:10px">
+  <div class="lote-card-header">
+    <span class="lote-card-num">${i+1}</span>
+    <span class="lote-card-target">${esc(item.target)}</span>
+  </div>
+  <div class="lote-card-body">
+    <div class="lote-mode-pills">
+      <div class="lote-pill ${item.mode==='text'?'active':''}"      onclick="setEditLoteMode(${i},'text')">Texto</div>
+      <div class="lote-pill ${item.mode==='file'?'active':''}"      onclick="setEditLoteMode(${i},'file')">Arquivo</div>
+      <div class="lote-pill ${item.mode==='file_text'?'active':''}" onclick="setEditLoteMode(${i},'file_text')">Arq+Texto</div>
+    </div>
+    ${item.mode!=='file'?`<textarea class="lote-textarea" placeholder="Mensagem..."
+      oninput="editLoteItens[${i}].message=this.value">${esc(item.message||'')}</textarea>`:''}
+    ${item.mode!=='text'?`<div class="lote-file-row" onclick="pickEditLoteFile(${i})">
+      <span class="lote-file-icon">📎</span>
+      <span class="lote-file-name">${item.file_path?item.file_path.split('\\').pop():'Selecionar arquivo'}</span>
+    </div>`:''}
+  </div>
+</div>`).join('');
+}
+
+function setEditLoteMode(i, mode) {
+  editLoteItens[i].mode = mode;
+  if (mode === 'file') editLoteItens[i].message = '';
+  renderEditLoteItens();
+}
+
+async function pickEditLoteFile(i) {
+  const r = await pywebview.api.selecionar_arquivo();
+  if (r.paths && r.paths.length) {
+    editLoteItens[i].file_path = r.joined;
+    renderEditLoteItens();
+  }
+}
+
+function toggleEditLoteDaily() {
+  isEditLoteDailyOn = !isEditLoteDailyOn;
+  document.getElementById('editLoteDailyUI').classList.toggle('on', isEditLoteDailyOn);
+  const di = document.getElementById('editLoteDate');
+  di.disabled = isEditLoteDailyOn; di.style.opacity = isEditLoteDailyOn ? '.4' : '1';
+}
+
+function closeEditLoteModal() {
+  document.getElementById('modalEditLote').classList.remove('open');
+  editLoteBatchId = null; editLoteItens = [];
+}
+
+async function handleSalvarEditLote() {
+  const timeStr = document.getElementById('editLoteTime').value.trim();
+  const dateVal = document.getElementById('editLoteDate').value.trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(timeStr)) { toast('Hora inválida','error'); return; }
+  let inclWk = true;
+  if (isEditLoteDailyOn) { inclWk = await askWeekends(); if(inclWk===null) return; }
+  const btn = document.getElementById('btnSalvarEditLote');
+  setLoading(btn, true);
+  const r = await pywebview.api.editar_lote({
+    batch_id: editLoteBatchId,
+    itens:    editLoteItens,
+    date_str: dateVal,
+    time_str: timeStr,
+    daily:    isEditLoteDailyOn,
+    include_weekends: inclWk,
+  });
+  setLoading(btn, false);
+  if (r.error) { toast(r.error,'error'); return; }
+  toast('Lote atualizado!','success');
+  closeEditLoteModal();
+  loadCards();
+}
+
+async function handleDeleteLote(batchId, target) {
+  if (!confirm(`Excluir lote "${target}"?`)) return;
+  const r = await pywebview.api.excluir_lote(batchId);
+  if (r.error) { toast(r.error,'error'); return; }
+  toast(`Lote excluído (${r.count} itens)`,'info');
+  loadCards();
 }

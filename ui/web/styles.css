@@ -520,6 +520,9 @@ body.light .mode-pill.active {
 }
 body.light .modal-overlay { background: rgba(90,62,200,.12); }
 .modal-overlay.open { display: flex; }
+
+/* modal de fins de semana sempre acima dos outros modais */
+#modalWk { z-index: 2000; }
 .modal {
   background: var(--bg2);
   border: 1px solid var(--border2);
@@ -911,3 +914,16 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
 }
 .cs-option:hover { background: var(--surface); color: var(--text); }
 .cs-option.active { color: var(--accent); font-weight: 500; }
+
+/* ── card lote expansível ── */
+.card-lote .lote-items-body { padding: 8px 0 4px; }
+.lote-item-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.lote-item-row:last-child { border-bottom: none; }
+.lote-item-target { flex: 1; color: var(--text); }
+.lote-item-mode   { color: var(--text3); font-size: 11px; }
+.lote-chevron     { font-size: 12px; color: var(--text3); transition: transform .2s; }

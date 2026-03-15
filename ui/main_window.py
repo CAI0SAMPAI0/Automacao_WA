@@ -5,6 +5,7 @@ import sys
 import json
 import threading
 import subprocess
+import time as time_module
 from pathlib import Path
 from datetime import datetime
 
@@ -37,37 +38,97 @@ def _get_icon_path() -> str:
     return str(Path(get_app_base_dir()) / "resources" / "Taty_s-English-Logo.ico")
 
 
-# ─────────────────────────────────────────────
-#  API exposta ao JS
-# ─────────────────────────────────────────────
-class Api:
-    """
-    Cada método público aqui pode ser chamado do JS via:
-        window.pywebview.api.nomeDoMetodo(arg)
-    """
+def _ensure_batch_column():
+    """Adiciona coluna batch_id ao banco se não existir."""
+    import sqlite3
+    from core.paths import get_user_data_dir
+    db_path = Path(get_user_data_dir()) / "scheduler.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("ALTER TABLE agendamentos ADD COLUMN batch_id TEXT")
+        conn.commit()
+    except Exception:
+        pass  # coluna já existe
+    finally:
+        conn.close()
 
+
+# garante a coluna batch_id ao importar
+_ensure_batch_column()
+
+
+class Api:
+
+    # ── contadores ────────────────────────────────────────────────────────
     def get_execucoes(self):
         return {"count": contador_execucao(False)}
 
+    # ── agendamentos ──────────────────────────────────────────────────────
     def listar_agendamentos(self):
-        rows = db.listar_todos()
-        result = []
+        """Retorna agendamentos, agrupando lotes pelo batch_id."""
+        import sqlite3
+        from core.paths import get_user_data_dir
+        db_path = Path(get_user_data_dir()) / "scheduler.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, task_name, target, mode, scheduled_time,
+                   status, created_at, batch_id, message, file_path
+            FROM agendamentos
+            ORDER BY scheduled_time DESC
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+
+        # agrupa lotes
+        singles = []
+        batches = {}
         for row in rows:
-            t_id, task_name, target, mode, sched_time, status, created_at = row
+            bid = row.get("batch_id")
             try:
-                dt_fmt = datetime.fromisoformat(sched_time).strftime("%d/%m/%Y %H:%M")
+                dt_fmt = datetime.fromisoformat(row["scheduled_time"]).strftime("%d/%m/%Y %H:%M")
             except Exception:
-                dt_fmt = sched_time
+                dt_fmt = row["scheduled_time"]
+            row["scheduled_time_fmt"] = dt_fmt
+
+            if bid:
+                if bid not in batches:
+                    batches[bid] = {"batch_id": bid, "itens": [],
+                                    "scheduled_time": dt_fmt, "status": row["status"]}
+                batches[bid]["itens"].append(row)
+                # status do lote = pior status dos itens
+                prio = ["running","failed","pending","cancelled","completed"]
+                if prio.index(row["status"]) < prio.index(batches[bid]["status"]):
+                    batches[bid]["status"] = row["status"]
+                    batches[bid]["scheduled_time"] = dt_fmt
+            else:
+                singles.append(row)
+
+        result = []
+        for row in singles:
             result.append({
-                "id": t_id,
-                "task_name": task_name,
-                "target": target,
-                "mode": mode,
-                "scheduled_time": dt_fmt,
-                "scheduled_time_iso": sched_time,
-                "status": status,
-                "created_at": created_at,
+                "id": row["id"], "task_name": row["task_name"],
+                "target": row["target"], "mode": row["mode"],
+                "scheduled_time": row["scheduled_time_fmt"],
+                "status": row["status"], "batch_id": None,
             })
+        for bid, b in batches.items():
+            targets = ", ".join(i["target"] for i in b["itens"][:3])
+            if len(b["itens"]) > 3:
+                targets += f" +{len(b['itens'])-3}"
+            result.append({
+                "id": None, "batch_id": bid,
+                "target": f"Lote: {targets}",
+                "mode": "lote", "is_lote": True,
+                "count": len(b["itens"]),
+                "itens": b["itens"],
+                "scheduled_time": b["scheduled_time"],
+                "status": b["status"],
+            })
+
+        # reordena por data desc
+        result.sort(key=lambda x: x["scheduled_time"], reverse=True)
         return {"agendamentos": result}
 
     def obter_agendamento(self, task_id: int):
@@ -79,52 +140,29 @@ class Api:
             data["date_str"] = dt.strftime("%d/%m/%Y")
             data["time_str"] = dt.strftime("%H:%M")
         except Exception:
-            data["date_str"] = ""
-            data["time_str"] = ""
+            data["date_str"] = data["time_str"] = ""
         return {"agendamento": data}
 
-    def reenviar_agendamento(self, task_id: int):
-        """Reenvia um agendamento com status failed ou completed."""
+    def obter_lote(self, batch_id: str):
+        """Retorna todos os itens de um lote para edição."""
+        import sqlite3
+        from core.paths import get_user_data_dir
+        db_path = Path(get_user_data_dir()) / "scheduler.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM agendamentos WHERE batch_id=? ORDER BY id", (batch_id,))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        if not rows:
+            return {"error": "Lote nao encontrado"}
         try:
-            task_id  = int(task_id)
-            task_data = db.obter_por_id(task_id)
-            if not task_data:
-                return {"error": "Agendamento nao encontrado"}
-
-            temp_dir  = Path(BASE_DIR) / "temp_tasks"
-            temp_dir.mkdir(exist_ok=True)
-            ts        = int(datetime.now().timestamp())
-            json_path = temp_dir / f"reenvio_{ts}.json"
-
-            task_json = {
-                "task_id":   None,  # não atualiza DB de agendamento
-                "target":    task_data["target"],
-                "mode":      task_data["mode"],
-                "message":   task_data.get("message") or "",
-                "file_path": task_data.get("file_path") or None,
-            }
-            json_path.write_text(
-                json.dumps(task_json, ensure_ascii=False, indent=2), encoding="utf-8")
-
-            executor_path = _get_executor_path()
-            cmd = ([sys.executable, "--executor-json", str(json_path)]
-                   if getattr(sys, "frozen", False)
-                   else [sys.executable, str(executor_path), str(json_path)])
-
-            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            proc  = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=flags, cwd=str(BASE_DIR),
-                encoding="utf-8", errors="replace")
-
-            threading.Thread(
-                target=self._monitorar_envio,
-                args=(proc, json_path),
-                daemon=False
-            ).start()
-            return {"ok": True}
-        except Exception as e:
-            return {"error": str(e)}
+            dt = datetime.fromisoformat(rows[0]["scheduled_time"])
+            date_str = dt.strftime("%d/%m/%Y")
+            time_str = dt.strftime("%H:%M")
+        except Exception:
+            date_str = time_str = ""
+        return {"itens": rows, "date_str": date_str, "time_str": time_str}
 
     def excluir_agendamento(self, task_id: int):
         try:
@@ -134,6 +172,21 @@ class Api:
             return {"ok": True}
         except Exception as e:
             return {"error": str(e)}
+
+    def excluir_lote(self, batch_id: str):
+        """Exclui todos os agendamentos de um lote."""
+        import sqlite3
+        from core.paths import get_user_data_dir
+        db_path = Path(get_user_data_dir()) / "scheduler.db"
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM agendamentos WHERE batch_id=?", (batch_id,))
+        ids = [r[0] for r in cur.fetchall()]
+        conn.close()
+        for tid in ids:
+            windows_scheduler.delete_windows_task(tid)
+            db.deletar(tid)
+        return {"ok": True, "count": len(ids)}
 
     def editar_agendamento(self, dados: dict):
         try:
@@ -153,7 +206,6 @@ class Api:
             else:
                 date_str = dados["date_str"].strip()
                 nova_dt  = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M")
-                # só bloqueia data passada se for pendente (completed/failed podem ser reagendados)
                 task_atual = db.obter_por_id(t_id)
                 if nova_dt < datetime.now() and task_atual and task_atual.get("status") == "pending":
                     return {"error": "Data/hora no passado"}
@@ -164,47 +216,118 @@ class Api:
 
             windows_scheduler.delete_windows_task(t_id)
             db.atualizar_agendamento_completo(t_id, target, mode, message, file_path, nova_dt)
-
-            json_cfg = {"target": target, "mode": mode,
-                        "message": message, "file_path": file_path}
+            json_cfg = {"target": target, "mode": mode, "message": message, "file_path": file_path}
             windows_scheduler.create_task_bat(t_id, task_data["task_name"], json_cfg)
             windows_scheduler.create_windows_task(
                 t_id, task_data["task_name"], time_str, date_str,
-                daily=is_daily, include_weekends=incl_wk
-            )
+                daily=is_daily, include_weekends=incl_wk)
             return {"ok": True}
         except Exception as e:
             return {"error": str(e)}
 
+    def editar_lote(self, dados: dict):
+        """
+        Edita todos os itens de um lote de uma vez.
+        dados = { batch_id, itens:[{id,target,mode,message,file_path}],
+                  date_str, time_str, daily, include_weekends }
+        """
+        try:
+            import re
+            batch_id = dados["batch_id"]
+            itens    = dados["itens"]
+            time_str = dados["time_str"].strip()
+            is_daily = dados.get("daily", False)
+            incl_wk  = dados.get("include_weekends", True)
+
+            if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', time_str):
+                return {"error": "Hora invalida. Use HH:MM"}
+
+            if is_daily:
+                nova_dt  = datetime.strptime(
+                    f"{datetime.now().strftime('%d/%m/%Y')} {time_str}", "%d/%m/%Y %H:%M")
+                date_str = datetime.now().strftime("%d/%m/%Y")
+            else:
+                date_str = dados["date_str"].strip()
+                nova_dt  = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M")
+                if nova_dt < datetime.now():
+                    return {"error": "Data/hora no passado"}
+
+            for item in itens:
+                t_id      = int(item["id"])
+                target    = item["target"].strip()
+                mode      = item["mode"]
+                message   = item.get("message", "").strip()
+                file_path = item.get("file_path") or None
+                task_data = db.obter_por_id(t_id)
+                if not task_data:
+                    continue
+                windows_scheduler.delete_windows_task(t_id)
+                db.atualizar_agendamento_completo(t_id, target, mode, message, file_path, nova_dt)
+                json_cfg = {"target": target, "mode": mode, "message": message, "file_path": file_path}
+                windows_scheduler.create_task_bat(t_id, task_data["task_name"], json_cfg)
+                windows_scheduler.create_windows_task(
+                    t_id, task_data["task_name"], time_str, date_str,
+                    daily=is_daily, include_weekends=incl_wk)
+
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def reenviar_agendamento(self, task_id: int):
+        try:
+            task_id   = int(task_id)
+            task_data = db.obter_por_id(task_id)
+            if not task_data:
+                return {"error": "Agendamento nao encontrado"}
+            temp_dir  = Path(BASE_DIR) / "temp_tasks"
+            temp_dir.mkdir(exist_ok=True)
+            ts        = int(datetime.now().timestamp())
+            json_path = temp_dir / f"reenvio_{ts}.json"
+            task_json = {
+                "task_id":   None,
+                "target":    task_data["target"],
+                "mode":      task_data["mode"],
+                "message":   task_data.get("message") or "",
+                "file_path": task_data.get("file_path") or None,
+            }
+            json_path.write_text(json.dumps(task_json, ensure_ascii=False, indent=2), encoding="utf-8")
+            executor_path = _get_executor_path()
+            cmd = ([sys.executable, "--executor-json", str(json_path)]
+                   if getattr(sys, "frozen", False)
+                   else [sys.executable, str(executor_path), str(json_path)])
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            proc  = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     creationflags=flags, cwd=str(BASE_DIR),
+                                     encoding="utf-8", errors="replace")
+            threading.Thread(target=self._monitorar_envio, args=(proc, json_path), daemon=False).start()
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ── envio imediato ────────────────────────────────────────────────────
     def enviar_agora(self, dados: dict):
         try:
             task_data = {
-                "task_id":  None,
-                "target":   dados["target"].strip(),
-                "mode":     dados["mode"],
-                "message":  dados.get("message", "").strip(),
+                "task_id":   None,
+                "target":    dados["target"].strip(),
+                "mode":      dados["mode"],
+                "message":   dados.get("message", "").strip(),
                 "file_path": dados.get("file_path") or None,
             }
             temp_dir  = Path(BASE_DIR) / "temp_tasks"
             temp_dir.mkdir(exist_ok=True)
             ts        = int(datetime.now().timestamp())
             json_path = temp_dir / f"manual_{ts}.json"
-            json_path.write_text(
-                json.dumps(task_data, ensure_ascii=False, indent=2), encoding="utf-8")
-
+            json_path.write_text(json.dumps(task_data, ensure_ascii=False, indent=2), encoding="utf-8")
             executor_path = _get_executor_path()
             cmd = ([sys.executable, "--executor-json", str(json_path)]
                    if getattr(sys, "frozen", False)
                    else [sys.executable, str(executor_path), str(json_path)])
-
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            proc  = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                creationflags=flags, cwd=str(BASE_DIR),
-                encoding="utf-8", errors="replace")
-
-            threading.Thread(target=self._monitorar_envio,
-                             args=(proc, json_path), daemon=False).start()
+            proc  = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                     creationflags=flags, cwd=str(BASE_DIR),
+                                     encoding="utf-8", errors="replace")
+            threading.Thread(target=self._monitorar_envio, args=(proc, json_path), daemon=False).start()
             return {"ok": True, "msg": "Envio iniciado"}
         except Exception as e:
             return {"error": str(e)}
@@ -229,6 +352,185 @@ class Api:
         except Exception:
             pass
 
+    # ── lote — envio imediato ─────────────────────────────────────────────
+    def enviar_lote(self, dados: dict):
+        try:
+            itens = dados.get("itens", [])
+            if not itens:
+                return {"error": "Nenhum item no lote"}
+            temp_dir = Path(BASE_DIR) / "temp_tasks"
+            temp_dir.mkdir(exist_ok=True)
+            ts = int(datetime.now().timestamp())
+            threading.Thread(
+                target=self._executar_lote_sequencial,
+                args=(itens, temp_dir, ts),
+                daemon=False
+            ).start()
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _executar_lote_sequencial(self, itens, temp_dir, ts):
+        """
+        Abre o WhatsApp UMA vez, envia para todos, fecha só no final.
+        Velocidade: sleeps reduzidos ao mínimo necessário.
+        """
+        import pyperclip
+        from core.automation import iniciar_driver, enviar_arquivo_com_mensagem
+        from core.paths import get_whatsapp_profile_dir
+
+        ok_count = 0
+        total    = len(itens)
+        erro_msg = ""
+        pw = context = page = None
+
+        SELETORES_SEARCH = [
+            'input[data-tab="3"]',
+            'input[aria-label="Pesquisar ou comecar uma nova conversa"]',
+            'input[aria-label="Search or start new chat"]',
+            'div[contenteditable="true"][data-tab="3"]',
+        ]
+
+        try:
+            profile_dir = get_whatsapp_profile_dir()
+            pw, context, page = iniciar_driver(profile_dir, modo_execucao='manual')
+
+            for i, item in enumerate(itens):
+                target    = item["target"].strip()
+                mode      = item["mode"]
+                message   = item.get("message", "").strip()
+                file_path = item.get("filePath") or None
+
+                try:
+                    # ── localiza search box ──────────────────────────────
+                    search_box = None
+                    for sel in SELETORES_SEARCH:
+                        try:
+                            el = page.locator(sel).first
+                            el.wait_for(state='visible', timeout=8000)
+                            search_box = el
+                            break
+                        except Exception:
+                            continue
+
+                    if not search_box:
+                        raise Exception(f"Campo de pesquisa nao encontrado para '{target}'")
+
+                    # ── pesquisa contato ────────────────────────────────
+                    search_box.click()
+                    time_module.sleep(0.3)
+                    # Ctrl+A para limpar qualquer texto anterior
+                    page.keyboard.press("Control+A")
+                    page.keyboard.type(target)
+                    time_module.sleep(1.5)  # reduzido de 2.5s
+                    page.keyboard.press("Enter")
+                    time_module.sleep(2.0)  # reduzido de 3s
+
+                    # ── envia ───────────────────────────────────────────
+                    if mode == "text":
+                        chat_box = page.locator('div[contenteditable="true"][data-tab="10"]')
+                        chat_box.wait_for(state="visible", timeout=12000)
+                        chat_box.click(force=True)
+                        pyperclip.copy(message)
+                        page.keyboard.press("Control+V")
+                        page.keyboard.press("Enter")
+                        time_module.sleep(3)  # reduzido de 4s
+                    else:
+                        enviar_arquivo_com_mensagem(page, file_path, message)
+
+                    ok_count += 1
+                    contador_execucao(incrementar=True)
+
+                except Exception as e:
+                    erro_msg = f"Erro em '{target}': {str(e)}"
+                    # continua para o próximo mesmo em caso de erro
+
+        except Exception as e:
+            erro_msg = str(e)
+        finally:
+            try:
+                if context:
+                    for p in context.pages:
+                        try: p.close()
+                        except Exception: pass
+            except Exception:
+                pass
+            if pw:
+                try: pw.stop()
+                except Exception: pass
+
+        try:
+            window  = webview.windows[0]
+            payload = json.dumps({"ok": ok_count == total, "ok_count": ok_count,
+                                  "total": total, "error": erro_msg})
+            window.evaluate_js(f"window.__onLoteResult({payload})")
+        except Exception:
+            pass
+
+    # ── lote — agendar ────────────────────────────────────────────────────
+    def agendar_lote(self, dados: dict):
+        try:
+            import re
+            import uuid
+            itens    = dados.get("itens", [])
+            time_str = dados["time_str"].strip()
+            is_daily = dados.get("daily", False)
+            incl_wk  = dados.get("include_weekends", True)
+
+            if not itens:
+                return {"error": "Nenhum item no lote"}
+            if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', time_str):
+                return {"error": "Hora invalida. Use HH:MM"}
+
+            if is_daily:
+                dt       = datetime.strptime(
+                    f"{datetime.now().strftime('%d/%m/%Y')} {time_str}", "%d/%m/%Y %H:%M")
+                date_str = datetime.now().strftime("%d/%m/%Y")
+            else:
+                date_str = dados["date_str"].strip()
+                dt       = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M")
+                if dt < datetime.now():
+                    return {"error": "O horario deve ser no futuro"}
+
+            # batch_id único para agrupar todos os itens deste lote
+            batch_id = f"batch_{int(datetime.now().timestamp())}"
+
+            count = 0
+            for idx, item in enumerate(itens):
+                target    = item["target"].strip()
+                mode      = item["mode"]
+                message   = item.get("message", "").strip()
+                file_path = item.get("filePath") or None
+
+                task_name = f"ZapLote_{int(datetime.now().timestamp())}_{idx}"
+                t_id = db.adicionar(task_name=task_name, target=target, mode=mode,
+                                    message=message, file_path=file_path, scheduled_time=dt)
+                if t_id and t_id != -1:
+                    # salva batch_id no registro
+                    self._set_batch_id(t_id, batch_id)
+                    json_cfg = {"target": target, "mode": mode,
+                                "message": message, "file_path": file_path}
+                    windows_scheduler.create_task_bat(t_id, task_name, json_cfg)
+                    windows_scheduler.create_windows_task(
+                        t_id, task_name, time_str, date_str,
+                        daily=is_daily, include_weekends=incl_wk)
+                    count += 1
+
+            return {"ok": True, "count": count, "batch_id": batch_id}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _set_batch_id(self, task_id: int, batch_id: str):
+        """Salva o batch_id no banco para agrupar itens do lote."""
+        import sqlite3
+        from core.paths import get_user_data_dir
+        db_path = Path(get_user_data_dir()) / "scheduler.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE agendamentos SET batch_id=? WHERE id=?", (batch_id, task_id))
+        conn.commit()
+        conn.close()
+
+    # ── agendar simples ───────────────────────────────────────────────────
     def agendar(self, dados: dict):
         try:
             import re
@@ -259,8 +561,7 @@ class Api:
             if not t_id or t_id == -1:
                 return {"error": "Falha ao salvar no banco de dados"}
 
-            json_cfg = {"target": target, "mode": mode,
-                        "message": message, "file_path": file_path}
+            json_cfg = {"target": target, "mode": mode, "message": message, "file_path": file_path}
             windows_scheduler.create_task_bat(t_id, task_name, json_cfg)
             suc, msg = windows_scheduler.create_windows_task(
                 t_id, task_name, time_str, date_str,
@@ -272,178 +573,7 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
-    def enviar_lote(self, dados: dict):
-        """
-        dados = { itens: [{target, mode, message, filePath}] }
-        Dispara envio sequencial em background.
-        """
-        try:
-            itens = dados.get("itens", [])
-            if not itens:
-                return {"error": "Nenhum item no lote"}
-
-            temp_dir = Path(BASE_DIR) / "temp_tasks"
-            temp_dir.mkdir(exist_ok=True)
-            ts = int(datetime.now().timestamp())
-
-            # Salva cada item como JSON separado e executa sequencialmente em thread
-            threading.Thread(
-                target=self._executar_lote_sequencial,
-                args=(itens, temp_dir, ts),
-                daemon=False
-            ).start()
-            return {"ok": True}
-        except Exception as e:
-            return {"error": str(e)}
-
-    def _executar_lote_sequencial(self, itens, temp_dir, ts):
-        """
-        Abre o WhatsApp UMA vez e envia para todos os destinatários
-        em sequência, fechando o navegador somente ao final.
-        """
-        from core.automation import iniciar_driver, enviar_arquivo_com_mensagem
-        from core.paths import get_whatsapp_profile_dir
-        import time
-        import pyperclip
-
-        ok_count = 0
-        total    = len(itens)
-        erro_msg = ""
-        pw = context = page = None
-
-        try:
-            profile_dir = get_whatsapp_profile_dir()
-            pw, context, page = iniciar_driver(profile_dir, modo_execucao='manual')
-
-            for i, item in enumerate(itens):
-                target    = item["target"].strip()
-                mode      = item["mode"]
-                message   = item.get("message", "").strip()
-                file_path = item.get("filePath") or None
-                try:
-                    # Pesquisa o contato
-                    seletores_search = [
-                        'input[data-tab="3"]',
-                        'input[aria-label="Pesquisar ou comecar uma nova conversa"]',
-                        'input[aria-label="Search or start new chat"]',
-                        'div[contenteditable="true"][data-tab="3"]',
-                    ]
-                    search_box = None
-                    for sel in seletores_search:
-                        try:
-                            el = page.locator(sel).first
-                            el.wait_for(state='visible', timeout=10000)
-                            search_box = el
-                            break
-                        except Exception:
-                            continue
-
-                    if not search_box:
-                        raise Exception("Campo de pesquisa nao encontrado")
-
-                    # Limpa pesquisa anterior e digita novo contato
-                    search_box.click()
-                    time.sleep(0.5)
-                    search_box.fill("")
-                    time.sleep(0.3)
-                    search_box.fill(target)
-                    time.sleep(2.5)
-                    page.keyboard.press("Enter")
-                    time.sleep(3)
-
-                    # Envia
-                    if mode == "text":
-                        chat_box = page.locator('div[contenteditable="true"][data-tab="10"]')
-                        chat_box.wait_for(state="visible", timeout=15000)
-                        chat_box.click(force=True)
-                        pyperclip.copy(message)
-                        page.keyboard.press("Control+V")
-                        page.keyboard.press("Enter")
-                        time.sleep(4)
-                    else:
-                        enviar_arquivo_com_mensagem(page, file_path, message)
-
-                    ok_count += 1
-                    # incrementa contador uma vez por envio bem-sucedido
-                    from core.automation import contador_execucao
-                    contador_execucao(incrementar=True)
-
-                except Exception as e:
-                    erro_msg = f"Erro em '{target}': {str(e)}"
-
-        except Exception as e:
-            erro_msg = str(e)
-        finally:
-            # Fecha o navegador UMA VEZ ao terminar todos os envios
-            try:
-                if context:
-                    for p in context.pages:
-                        try: p.close()
-                        except Exception: pass
-            except Exception:
-                pass
-            if pw:
-                try: pw.stop()
-                except Exception: pass
-
-        try:
-            window  = webview.windows[0]
-            payload = json.dumps({"ok": ok_count == total, "ok_count": ok_count,
-                                  "total": total, "error": erro_msg})
-            window.evaluate_js(f"window.__onLoteResult({payload})")
-        except Exception:
-            pass
-
-    def agendar_lote(self, dados: dict):
-        """
-        dados = { itens, date_str, time_str, daily, include_weekends }
-        Cria um agendamento separado para cada item do lote.
-        """
-        try:
-            import re
-            itens     = dados.get("itens", [])
-            time_str  = dados["time_str"].strip()
-            is_daily  = dados.get("daily", False)
-            incl_wk   = dados.get("include_weekends", True)
-
-            if not itens:
-                return {"error": "Nenhum item no lote"}
-            if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', time_str):
-                return {"error": "Hora invalida. Use HH:MM"}
-
-            if is_daily:
-                dt       = datetime.strptime(
-                    f"{datetime.now().strftime('%d/%m/%Y')} {time_str}", "%d/%m/%Y %H:%M")
-                date_str = datetime.now().strftime("%d/%m/%Y")
-            else:
-                date_str = dados["date_str"].strip()
-                dt       = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M")
-                if dt < datetime.now():
-                    return {"error": "O horario deve ser no futuro"}
-
-            count = 0
-            for item in itens:
-                target    = item["target"].strip()
-                mode      = item["mode"]
-                message   = item.get("message", "").strip()
-                file_path = item.get("filePath") or None
-
-                task_name = f"ZapTask_{int(datetime.now().timestamp())}_{count}"
-                t_id = db.adicionar(task_name=task_name, target=target, mode=mode,
-                                    message=message, file_path=file_path, scheduled_time=dt)
-                if t_id and t_id != -1:
-                    json_cfg = {"target": target, "mode": mode,
-                                "message": message, "file_path": file_path}
-                    windows_scheduler.create_task_bat(t_id, task_name, json_cfg)
-                    windows_scheduler.create_windows_task(
-                        t_id, task_name, time_str, date_str,
-                        daily=is_daily, include_weekends=incl_wk)
-                    count += 1
-
-            return {"ok": True, "count": count}
-        except Exception as e:
-            return {"error": str(e)}
-
+    # ── arquivo ───────────────────────────────────────────────────────────
     def selecionar_arquivo(self):
         result = webview.windows[0].create_file_dialog(
             webview.OPEN_DIALOG,
@@ -456,26 +586,23 @@ class Api:
         return {"paths": [], "joined": ""}
 
 
-# ─────────────────────────────────────────────
-#  Entrypoint
-# ─────────────────────────────────────────────
+# ── Entrypoint ────────────────────────────────────────────────────────────
 class App:
     def __init__(self):
         self.api  = Api()
         self._win = None
 
     def mainloop(self):
-        import time
         web_dir   = _get_web_dir()
         index     = web_dir / "index.html"
         icon_path = _get_icon_path()
 
         self._win = webview.create_window(
             title     = "Study Practices — WhatsApp Automation",
-            url       = str(index) + f"?nocache={int(time.time())}",
+            url       = str(index) + f"?nocache={int(time_module.time())}",
             js_api    = self.api,
-            width     = 510,
-            height    = 790,
+            width     = 540,
+            height    = 800,
             min_size  = (420, 600),
             resizable = True,
         )

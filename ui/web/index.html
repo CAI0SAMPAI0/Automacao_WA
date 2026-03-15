@@ -104,7 +104,7 @@
 
       <!-- ── LOTE ── -->
       <div id="form-lote" style="display:none;flex-direction:column;gap:14px;">
-        <div class="lote-hint">Digite os destinatários separados por vírgula, depois configure o conteúdo de cada um individualmente apertando no botão <strong>CONFIGURAR</strong> para agendar ou enviar na hora.</div>
+        <div class="lote-hint">Digite os destinatários separados por vírgula, depois configure o conteúdo de cada um individualmente.</div>
         <div class="field">
           <label>Destinatários (separados por vírgula)</label>
           <div style="display:flex;gap:8px;">
@@ -268,6 +268,47 @@
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="clearLoteFile()">Remover arquivo</button>
       <button class="btn btn-primary" onclick="pickLoteFile()"><span class="btn-label">Selecionar arquivo</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR LOTE -->
+<div class="modal-overlay" id="modalEditLote">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">Editar lote</div>
+      <button class="modal-close" onclick="closeEditLoteModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;max-height:55vh;overflow-y:auto;padding-right:4px">
+      <div id="editLoteItens"></div>
+    </div>
+    <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
+      <div class="dt-row">
+        <div class="field" style="flex:1">
+          <label>Data</label>
+          <div class="date-wrap">
+            <input type="text" id="editLoteDate" maxlength="10" placeholder="DD/MM/AAAA" oninput="maskDate(this)" autocomplete="off"/>
+            <button class="cal-btn" onclick="openCal('editLoteDate')">📅</button>
+          </div>
+        </div>
+        <div class="field time-field">
+          <label>Hora</label>
+          <input type="text" id="editLoteTime" maxlength="5" placeholder="HH:MM"/>
+        </div>
+      </div>
+      <div class="toggle-row" onclick="toggleEditLoteDaily()">
+        <span class="toggle-label">Todos os dias</span>
+        <div class="toggle" id="editLoteDailyUI">
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" style="flex:.4" onclick="closeEditLoteModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnSalvarEditLote" onclick="handleSalvarEditLote()">
+        <span class="spinner"></span><span class="btn-label">Salvar lote</span>
+      </button>
     </div>
   </div>
 </div>
