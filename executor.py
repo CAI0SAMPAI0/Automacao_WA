@@ -53,6 +53,113 @@ from core.automation import executar_envio, contador_execucao
 from core.logger import get_logger
 from core.paths import get_whatsapp_profile_dir
 
+def _executar_lote(itens, profile_dir, logger):
+    """
+    Abre o WhatsApp UMA vez e envia para todos os itens em sequência.
+    Igual ao envio imediato em lote — um Chrome, N envios.
+    """
+    import time
+    import pyperclip
+    from core.automation import iniciar_driver, enviar_arquivo_com_mensagem
+
+    SELETORES_SEARCH = [
+        'input[data-tab="3"]',
+        '#_r_9_',
+        'input[aria-label="Pesquisar ou começar uma nova conversa"]',
+        'input[aria-label="Search or start new chat"]',
+        'div[contenteditable="true"][data-tab="3"]',
+    ]
+
+    ok_count = 0
+    pw = context = page = None
+
+    try:
+        pw, context, page = iniciar_driver(profile_dir, modo_execucao='background', logger=logger)
+
+        for i, item in enumerate(itens):
+            target    = item["target"].strip()
+            mode      = item["mode"]
+            message   = item.get("message", "").strip()
+            file_path = item.get("file_path") or None
+
+            try:
+                # Localiza search box
+                search_box = None
+                for sel in SELETORES_SEARCH:
+                    try:
+                        el = page.locator(sel).first
+                        el.wait_for(state='visible', timeout=8000)
+                        search_box = el
+                        break
+                    except Exception:
+                        continue
+
+                if not search_box:
+                    raise Exception(f"Campo de pesquisa não encontrado para '{target}'")
+
+                # Limpa e pesquisa contato
+                search_box.click()
+                time.sleep(0.5)
+                search_box.fill(target)
+                time.sleep(1.5)
+                page.keyboard.press("Enter")
+                time.sleep(2.5)
+
+                if mode == "text":
+                    chat_box = page.locator('div[contenteditable="true"][data-tab="10"]')
+                    chat_box.wait_for(state="visible", timeout=12000)
+                    chat_box.click(force=True)
+                    pyperclip.copy(message)
+                    page.keyboard.press("Control+V")
+                    time.sleep(0.3)
+                    page.keyboard.press("Enter")
+                    time.sleep(3.0)
+                else:
+                    enviar_arquivo_com_mensagem(page, file_path, message, logger)
+
+                ok_count += 1
+                logger.info(f"[OK] Enviado para '{target}' ({ok_count}/{len(itens)})")
+
+                # Volta para search box para o próximo
+                if i < len(itens) - 1:
+                    try:
+                        page.keyboard.press("Escape")
+                        time.sleep(0.3)
+                        # Limpa o campo de pesquisa
+                        for sel in SELETORES_SEARCH:
+                            try:
+                                el = page.locator(sel).first
+                                el.wait_for(state='visible', timeout=5000)
+                                el.click()
+                                time.sleep(0.2)
+                                page.keyboard.press("Control+a")
+                                page.keyboard.press("Delete")
+                                time.sleep(0.2)
+                                break
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                logger.error(f"[ERRO] Falha em '{target}': {str(e)}")
+
+    except Exception as e:
+        logger.error(f"[ERRO] Falha geral no lote: {str(e)}")
+    finally:
+        try:
+            if context:
+                for p in context.pages:
+                    try: p.close()
+                    except: pass
+        except: pass
+        if pw:
+            try: pw.stop()
+            except: pass
+
+    return ok_count
+
+
 def main(json_path: str):
     """
     Executa uma tarefa a partir de arquivo JSON.
@@ -87,6 +194,26 @@ def main(json_path: str):
         
         task_id = dados.get("task_id")
         logger.info(f"Task ID: {task_id}")
+
+        # ===== VERIFICA SE É LOTE =====
+        if dados.get("lote") and dados.get("itens"):
+            logger.info(f"Modo LOTE: {len(dados['itens'])} itens")
+            db = get_db()
+            if task_id:
+                db.atualizar_status(task_id, "running")
+
+            profile_dir = get_whatsapp_profile_dir()
+            ok_count = _executar_lote(dados["itens"], profile_dir, logger)
+
+            if task_id:
+                status = "completed" if ok_count == len(dados["itens"]) else "failed"
+                db.atualizar_status(task_id, status)
+            contador_execucao(True)  # conta 1 execução do lote
+
+            logger.info(f"[OK] LOTE CONCLUIDO: {ok_count}/{len(dados['itens'])}")
+            logger.info("=" * 70)
+            sys.exit(0 if ok_count > 0 else 1)
+
         modo_execucao = 'manual' if task_id is None else 'auto'
         
         # ===== ATUALIZAR STATUS NO BANCO =====

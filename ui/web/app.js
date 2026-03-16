@@ -49,7 +49,7 @@ function init() {
   setupCardDelegation();
   refreshCount();
   loadCards(true);
-  setInterval(() => { loadCards(); refreshCount(); }, 1000);
+  setInterval(() => { loadCards(); refreshCount(); }, 2000);
 }
 
 /* ── delegação de cliques nos cards ── */
@@ -556,66 +556,86 @@ function resolveWk(v) {
    — lote: card agrupado expansível
 ══════════════════════════════════════════ */
 async function loadCards(force) {
-  const badge = document.getElementById('syncBadge');
   try {
-    badge.className = 'sync-badge'; badge.textContent = 'atualizando...';
     const r    = await pywebview.api.listar_agendamentos();
     const list = r.agendamentos || [];
     const container = document.getElementById('cardList');
 
     if (!list.length) {
-      container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
-      container.dataset.lastKey = '';
-    } else {
-      // chave inclui conteúdo visível (status + horário + target) para detectar qualquer mudança
-      const newKey = list.map(a => {
-        const k = a.batch_id || String(a.id);
-        return k + ':' + a.status + ':' + a.scheduled_time + ':' + a.target;
-      }).join('|');
-
-      if (!force && container.dataset.lastKey === newKey) {
-        // nada mudou
-      } else {
-        container.dataset.lastKey = newKey;
-        const ni = container.querySelector('.no-items');
-        if (ni) ni.remove();
-
-        const existingCards = new Map();
-        container.querySelectorAll('[data-id],[data-batch]').forEach(el => {
-          const k = el.dataset.batch || el.dataset.id;
-          existingCards.set(k, el);
-        });
-
-        const newKeys = new Set(list.map(a => String(a.batch_id || a.id)));
-        existingCards.forEach((el, k) => { if (!newKeys.has(k)) el.remove(); });
-
-        list.forEach((a, idx) => {
-          const key      = String(a.batch_id || a.id);
-          const existing = existingCards.get(key);
-          const html     = a.is_lote ? renderLoteCard(a) : renderCard(a);
-
-          if (!existing) {
-            const tmp = document.createElement('div');
-            tmp.innerHTML = html;
-            const newEl = tmp.firstElementChild;
-            const allCards = [...container.children];
-            if (idx >= allCards.length) container.appendChild(newEl);
-            else container.insertBefore(newEl, allCards[idx]);
-          } else {
-            // substitui o card inteiro se o conteúdo mudou (sem piscar pois é pontual)
-            const tmp = document.createElement('div');
-            tmp.innerHTML = html;
-            const newEl = tmp.firstElementChild;
-            container.replaceChild(newEl, existing);
-          }
-        });
+      if (!container.querySelector('.no-items')) {
+        container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
+        container.dataset.lastKey = '';
       }
+      return;
     }
-    const now = new Date();
-    badge.className='sync-badge ok';
-    badge.textContent=`✓ ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+    const ni = container.querySelector('.no-items');
+    if (ni) ni.remove();
+
+    // chave de detecção: status + horário + target
+    const newKey = list.map(a => {
+      const k = a.batch_id || String(a.id);
+      return k + ':' + a.status + ':' + a.scheduled_time + ':' + a.target;
+    }).join('|');
+
+    if (!force && container.dataset.lastKey === newKey) return;
+    container.dataset.lastKey = newKey;
+
+    // mapa dos cards existentes
+    const existingCards = new Map();
+    container.querySelectorAll('[data-id],[data-batch]').forEach(el => {
+      existingCards.set(el.dataset.batch || el.dataset.id, el);
+    });
+
+    // remove os que sumiram
+    const newKeys = new Set(list.map(a => String(a.batch_id || a.id)));
+    existingCards.forEach((el, k) => { if (!newKeys.has(k)) el.remove(); });
+
+    list.forEach((a, idx) => {
+      const key      = String(a.batch_id || a.id);
+      const existing = existingCards.get(key);
+
+      if (!existing) {
+        // card novo — insere
+        const tmp = document.createElement('div');
+        tmp.innerHTML = a.is_lote ? renderLoteCard(a) : renderCard(a);
+        const newEl = tmp.firstElementChild;
+        const allCards = [...container.children];
+        if (idx >= allCards.length) container.appendChild(newEl);
+        else container.insertBefore(newEl, allCards[idx]);
+      } else {
+        // card existente — atualiza só o badge de status sem recriar o DOM
+        const badge = existing.querySelector('.card-badge:not([style])');
+        if (badge) {
+          badge.className   = 'card-badge ' + statusBadgeClass(a.status);
+          badge.textContent = statusLabel(a.status);
+        }
+        // atualiza badges dos itens do lote (expansível)
+        if (a.is_lote && a.itens) {
+          const rows = existing.querySelectorAll('.lote-item-row');
+          a.itens.forEach((item, i) => {
+            if (rows[i]) {
+              const b = rows[i].querySelector('.card-badge');
+              if (b) {
+                b.className   = 'card-badge ' + statusBadgeClass(item.status);
+                b.textContent = statusLabel(item.status);
+              }
+            }
+          });
+        }
+        // habilita/desabilita botões conforme status
+        const running = a.status === 'running';
+        existing.querySelectorAll('[data-action="edit"],[data-action="edit-lote"]')
+          .forEach(b => b.disabled = running);
+        existing.querySelectorAll('[data-action="delete"],[data-action="delete-lote"]')
+          .forEach(b => b.disabled = running);
+        const rb = existing.querySelector('[data-action="retry"]');
+        if (rb) rb.style.display = a.status === 'failed' ? 'inline-flex' : 'none';
+      }
+    });
+
   } catch(e) {
-    badge.className='sync-badge err'; badge.textContent='erro';
+    // silencioso — não mostra erro visual no polling automático
   }
 }
 
@@ -679,7 +699,7 @@ function statusBadgeClass(s) {
   return {pending:'badge-pending',running:'badge-running',completed:'badge-completed',failed:'badge-failed',cancelled:'badge-cancelled'}[s]||'badge-pending';
 }
 function statusLabel(s) {
-  return {pending:'Pendente',running:'Enviando',completed:'Concluído',failed:'Falhou',cancelled:'Cancelado'}[s]||s.toUpperCase();
+  return {pending:'Pending',running:'Sending',completed:'Completed',failed:'Failed',cancelled:'Cancelled'}[s]||s.toUpperCase();
 }
 function modeLabel(m) { return {text:'Texto',file:'Arquivo',file_text:'Arq+Texto'}[m]||m; }
 

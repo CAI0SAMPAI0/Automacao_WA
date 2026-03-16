@@ -56,7 +56,7 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
     os.makedirs(userdir, exist_ok=True)
 
     # mata o chrome que esteja com esse perfil aberto
-    if modo_execucao in ['auto', 'background']:
+    if modo_execucao in ['auto']:
         _log(logger, "Verificando processos Chrome conflitantes...")
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
@@ -88,7 +88,7 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
         '--lang=pt-BR'
     ]
     
-    if is_auto:
+    if modo_execucao in ['auto', 'background']:
         browser_args.extend(['--window-position=-2400,-2400', '--force-device-scale-factor=0.70','--window-size=1366,768', '--high-dpi-support=1'])
 
     chromium_path = get_chrome_path()
@@ -296,7 +296,7 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
         enviou = True
 
     if enviou:
-        time.sleep(15)
+        time.sleep(15)  # aguarda confirmação de envio (necessário para arquivos maiores)
         _log(logger, "🚀 Concluído!")
     else:
         page.keyboard.press("Enter") # plano B
