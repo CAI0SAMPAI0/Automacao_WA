@@ -56,6 +56,15 @@ def _ensure_batch_column():
 # garante a coluna batch_id ao importar
 _ensure_batch_column()
 
+# migração automática do banco CTK
+try:
+    from migrate_db import migrate as _migrate_ctk
+    _result = _migrate_ctk(Path(BASE_DIR))
+    if _result.get("migrated", 0) > 0:
+        print(f"[MIGRAÇÃO] {_result['migrated']} agendamentos importados do app anterior.")
+except Exception as _e:
+    print(f"[MIGRAÇÃO] Ignorada: {_e}")
+
 
 class Api:
 
@@ -402,6 +411,12 @@ class Api:
                 file_path = item.get("filePath") or None
 
                 try:
+                    # ── após o primeiro envio, pressiona Escape para fechar
+                    #    o chat e voltar à lista antes de pesquisar o próximo
+                    if i > 0:
+                        page.keyboard.press("Escape")
+                        time_module.sleep(0.5)
+
                     # ── localiza search box ──────────────────────────────
                     search_box = None
                     for sel in SELETORES_SEARCH:
@@ -416,15 +431,15 @@ class Api:
                     if not search_box:
                         raise Exception(f"Campo de pesquisa nao encontrado para '{target}'")
 
-                    # ── pesquisa contato ────────────────────────────────
+                    # ── limpa pesquisa anterior e digita novo contato ────
                     search_box.click()
                     time_module.sleep(0.3)
-                    # Ctrl+A para limpar qualquer texto anterior
-                    page.keyboard.press("Control+A")
-                    page.keyboard.type(target)
-                    time_module.sleep(1.5)  # reduzido de 2.5s
+                    search_box.fill("")          # limpa via fill
+                    time_module.sleep(0.2)
+                    search_box.type(target)      # digita letra a letra (mais confiável)
+                    time_module.sleep(1.5)
                     page.keyboard.press("Enter")
-                    time_module.sleep(2.0)  # reduzido de 3s
+                    time_module.sleep(2.0)
 
                     # ── envia ───────────────────────────────────────────
                     if mode == "text":
@@ -433,13 +448,22 @@ class Api:
                         chat_box.click(force=True)
                         pyperclip.copy(message)
                         page.keyboard.press("Control+V")
+                        time_module.sleep(0.5)
                         page.keyboard.press("Enter")
-                        time_module.sleep(3)  # reduzido de 4s
+                        time_module.sleep(2.5)
                     else:
                         enviar_arquivo_com_mensagem(page, file_path, message)
 
                     ok_count += 1
                     contador_execucao(incrementar=True)
+
+                    # notifica o JS do progresso parcial
+                    try:
+                        win     = webview.windows[0]
+                        partial = json.dumps({"partial": True, "ok_count": ok_count, "total": total, "target": target})
+                        win.evaluate_js(f"window.__onLoteProgress && window.__onLoteProgress({partial})")
+                    except Exception:
+                        pass
 
                 except Exception as e:
                     erro_msg = f"Erro em '{target}': {str(e)}"
@@ -602,7 +626,7 @@ class App:
             url       = str(index) + f"?nocache={int(time_module.time())}",
             js_api    = self.api,
             width     = 540,
-            height    = 800,
+            height    = 860,
             min_size  = (420, 600),
             resizable = True,
         )

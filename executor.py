@@ -113,7 +113,8 @@ def main(json_path: str):
         # ===== SUCESSO =====
         if task_id:
             db.atualizar_status(task_id, "completed")
-            contador_execucao(True)
+        # sempre incrementa ao executar com sucesso (com ou sem task_id)
+        contador_execucao(True)
         
         logger.info("[OK] TAREFA CONCLUIDA COM SUCESSO")
         logger.info("=" * 70)

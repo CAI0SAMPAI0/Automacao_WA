@@ -68,7 +68,7 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
                     proc.wait(timeout=10)
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
                 continue
-        time.sleep(4)  # aguarda o Chrome liberar o perfil
+        time.sleep(1.5)  # aguarda o Chrome liberar o perfil
 
     _log(logger, f"Iniciando Playwright | Perfil: {userdir}")
     _log(logger, f"Modo de execução: {modo_execucao}")
@@ -136,7 +136,7 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
     xpath_anexo = '//div[@aria-label="Anexar"] | //span[@data-icon="plus"] | //span[@data-icon="plus-rounded"] | //span[@data-icon="clip"] | //div[@aria-label="Attach"]'
     btn_anexo = page.wait_for_selector(xpath_anexo, state="visible", timeout=120000)
     btn_anexo.click()
-    time.sleep(2)
+    time.sleep(1)
 
     # 2. Processamento de Caminhos
     if isinstance(file_path, str):
@@ -296,8 +296,7 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
         enviou = True
 
     if enviou:
-        time.sleep(15)
-        #contador_execucao(incrementar=True)
+        time.sleep(20)
         _log(logger, "🚀 Concluído!")
     else:
         page.keyboard.press("Enter") # plano B
@@ -329,20 +328,20 @@ def executar_envio(userdir, target, mode, message=None, file_path=None, logger=N
             raise Exception('Campo de pesquisa do WhatsApp não encontrado.')
 
         search_box.click()
-        time.sleep(1)
+        time.sleep(0.5)
         search_box.fill(target)
-        time.sleep(3)
+        time.sleep(1.5)
         page.keyboard.press("Enter")
-        time.sleep(5)
+        time.sleep(2.5)
 
         if mode == "text":
             chat_box = page.locator('div[contenteditable="true"][data-tab="10"]')
-            chat_box.wait_for(state="visible")
+            chat_box.wait_for(state="visible", timeout=15000)
             chat_box.click(force=True)
             pyperclip.copy(message)
             page.keyboard.press("Control+V")
             page.keyboard.press("Enter")
-            time.sleep(5)
+            time.sleep(3)
         else:
             enviar_arquivo_com_mensagem(page, file_path, message, logger)
             

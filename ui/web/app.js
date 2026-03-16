@@ -48,8 +48,8 @@ function init() {
   setupEditModeWatch();
   setupCardDelegation();
   refreshCount();
-  loadCards();
-  setInterval(() => { loadCards(); refreshCount(); }, 2500);
+  loadCards(true);
+  setInterval(() => { loadCards(); refreshCount(); }, 1000);
 }
 
 /* ── delegação de cliques nos cards ── */
@@ -357,7 +357,7 @@ async function handleAgendar() {
   setLoading(btn, false);
   if (r.error) { toast(r.error,'error'); return; }
   toast('Agendado! O contador só atualiza quando for executado.','success');
-  resetForm(); loadCards();
+  resetForm(); loadCards(true);
 }
 
 /* ══════════════════════════════════════════
@@ -474,7 +474,6 @@ async function handleEnviarLote() {
 
 window.__onLoteResult = function(payload) {
   setLoading(document.getElementById('btnEnviarLote'), false);
-  // refreshCount pega o valor real do arquivo — incrementado N vezes pelo Python
   refreshCount();
   if (payload.ok) {
     toast(`Lote concluído: ${payload.total} enviado(s)!`,'success');
@@ -482,6 +481,13 @@ window.__onLoteResult = function(payload) {
   } else {
     toast(`Lote parcial: ${payload.ok_count}/${payload.total} enviados.`,'error');
   }
+  loadCards(true);
+};
+
+window.__onLoteProgress = function(payload) {
+  // progresso parcial: atualiza contador e mostra toast por envio
+  refreshCount();
+  toast(`✓ Enviado para "${payload.target}" (${payload.ok_count}/${payload.total})`,'info');
 };
 
 /* ══════════════════════════════════════════
@@ -517,7 +523,7 @@ async function confirmarAgendarLote() {
   setLoading(btn, false);
   if (r.error) { toast(r.error,'error'); return; }
   toast(`Lote agendado: ${r.count} tarefa(s) criada(s)!`,'success');
-  resetLote(); loadCards();
+  resetLote(); loadCards(true);
 }
 function resetLote() {
   loteItems = [];
@@ -549,7 +555,7 @@ function resolveWk(v) {
    — simples: card individual
    — lote: card agrupado expansível
 ══════════════════════════════════════════ */
-async function loadCards() {
+async function loadCards(force) {
   const badge = document.getElementById('syncBadge');
   try {
     badge.className = 'sync-badge'; badge.textContent = 'atualizando...';
@@ -558,20 +564,19 @@ async function loadCards() {
     const container = document.getElementById('cardList');
 
     if (!list.length) {
-      if (!container.querySelector('.no-items'))
-        container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
+      container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
       container.dataset.lastKey = '';
     } else {
-      // chave de detecção de mudança por item
+      // chave inclui conteúdo visível (status + horário + target) para detectar qualquer mudança
       const newKey = list.map(a => {
         const k = a.batch_id || String(a.id);
-        return k + ':' + a.status;
+        return k + ':' + a.status + ':' + a.scheduled_time + ':' + a.target;
       }).join('|');
 
-      if (container.dataset.lastKey !== newKey) {
+      if (!force && container.dataset.lastKey === newKey) {
+        // nada mudou
+      } else {
         container.dataset.lastKey = newKey;
-
-        // remove cards que não existem mais
         const ni = container.querySelector('.no-items');
         if (ni) ni.remove();
 
@@ -584,14 +589,12 @@ async function loadCards() {
         const newKeys = new Set(list.map(a => String(a.batch_id || a.id)));
         existingCards.forEach((el, k) => { if (!newKeys.has(k)) el.remove(); });
 
-        // insere ou atualiza cada item mantendo a ordem
         list.forEach((a, idx) => {
           const key      = String(a.batch_id || a.id);
           const existing = existingCards.get(key);
           const html     = a.is_lote ? renderLoteCard(a) : renderCard(a);
 
           if (!existing) {
-            // novo card — insere na posição correta
             const tmp = document.createElement('div');
             tmp.innerHTML = html;
             const newEl = tmp.firstElementChild;
@@ -599,19 +602,11 @@ async function loadCards() {
             if (idx >= allCards.length) container.appendChild(newEl);
             else container.insertBefore(newEl, allCards[idx]);
           } else {
-            // card existente — atualiza apenas o badge e botões sem recriar
-            const badge = existing.querySelector('.card-badge');
-            if (badge && badge.textContent !== statusLabel(a.status)) {
-              badge.className   = 'card-badge ' + statusBadgeClass(a.status);
-              badge.textContent = statusLabel(a.status);
-            }
-            const running = a.status === 'running';
-            existing.querySelectorAll('[data-action="edit"],[data-action="edit-lote"]')
-              .forEach(b => b.disabled = running);
-            existing.querySelectorAll('[data-action="delete"],[data-action="delete-lote"]')
-              .forEach(b => b.disabled = running);
-            const rb = existing.querySelector('[data-action="retry"]');
-            if (rb) rb.style.display = a.status === 'failed' ? 'inline-flex' : 'none';
+            // substitui o card inteiro se o conteúdo mudou (sem piscar pois é pontual)
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            const newEl = tmp.firstElementChild;
+            container.replaceChild(newEl, existing);
           }
         });
       }
@@ -695,7 +690,7 @@ async function handleReenviar(id) {
   const r = await pywebview.api.reenviar_agendamento(id);
   if (r.error) { toast(r.error,'error'); return; }
   toast('Reenvio iniciado!','info');
-  loadCards();
+  loadCards(true);
 }
 
 /* ══════════════════════════════════════════
@@ -792,7 +787,7 @@ async function handleSalvarEdit() {
   setLoading(btn, false);
   if (r.error) { toast(r.error,'error'); return; }
   toast('Agendamento atualizado!','success');
-  closeEditModal(); loadCards();
+  closeEditModal(); loadCards(true);
 }
 
 /* ══════════════════════════════════════════
@@ -937,7 +932,7 @@ async function handleSalvarEditLote() {
   if (r.error) { toast(r.error,'error'); return; }
   toast('Lote atualizado!','success');
   closeEditLoteModal();
-  loadCards();
+  loadCards(true);
 }
 
 async function handleDeleteLote(batchId, target) {
@@ -945,5 +940,5 @@ async function handleDeleteLote(batchId, target) {
   const r = await pywebview.api.excluir_lote(batchId);
   if (r.error) { toast(r.error,'error'); return; }
   toast(`Lote excluído (${r.count} itens)`,'info');
-  loadCards();
+  loadCards(true);
 }
