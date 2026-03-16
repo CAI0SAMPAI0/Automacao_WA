@@ -58,10 +58,18 @@ _ensure_batch_column()
 
 # migração automática do banco CTK
 try:
-    from migrate_db import migrate as _migrate_ctk
-    _result = _migrate_ctk(Path(BASE_DIR))
-    if _result.get("migrated", 0) > 0:
-        print(f"[MIGRAÇÃO] {_result['migrated']} agendamentos importados do app anterior.")
+    import importlib.util as _ilu
+    # tenta migrate_db.py e migrat_db.py (nome alternativo no projeto)
+    for _mig_name in ["migrate_db.py", "migrat_db.py"]:
+        _mig_path = Path(BASE_DIR) / _mig_name
+        if _mig_path.exists():
+            _spec = _ilu.spec_from_file_location("migrate_db", str(_mig_path))
+            _mig  = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_mig)
+            _result = _mig.migrate(Path(BASE_DIR))
+            if _result.get("migrated", 0) > 0:
+                print(f"[MIGRAÇÃO] {_result['migrated']} agendamentos importados do app anterior.")
+            break
 except Exception as _e:
     print(f"[MIGRAÇÃO] Ignorada: {_e}")
 

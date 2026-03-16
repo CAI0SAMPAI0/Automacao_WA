@@ -296,7 +296,7 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
         enviou = True
 
     if enviou:
-        time.sleep(20)
+        time.sleep(15)
         _log(logger, "🚀 Concluído!")
     else:
         page.keyboard.press("Enter") # plano B
@@ -336,7 +336,7 @@ def executar_envio(userdir, target, mode, message=None, file_path=None, logger=N
 
         if mode == "text":
             chat_box = page.locator('div[contenteditable="true"][data-tab="10"]')
-            chat_box.wait_for(state="visible", timeout=15000)
+            chat_box.wait_for(state="visible")
             chat_box.click(force=True)
             pyperclip.copy(message)
             page.keyboard.press("Control+V")
