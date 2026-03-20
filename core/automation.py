@@ -19,7 +19,7 @@ def clicar_primeiro_disponivel(page, lista_seletores, timeout_por_tentativa=300,
     """
     for sel in lista_seletores:
         try:
-            elemento = page.locator(sel).last # Usa o último para evitar menus ocultos
+            elemento = page.locator(sel).last
             elemento.wait_for(state="visible", timeout=timeout_por_tentativa)
             elemento.scroll_into_view_if_needed()
             elemento.click(force=True)
@@ -95,39 +95,143 @@ def iniciar_driver(userdir, modo_execucao='manual', logger=None):
     _log(logger, f"Chrome path: {chromium_path}")
     _log(logger, f"Browser args: {browser_args}")
 
-    try:
-        browser_context = pw.chromium.launch_persistent_context(
-            executable_path=str(chromium_path),
-            user_data_dir=userdir, 
-            headless=False, 
-            args=browser_args, 
-            locale="pt-BR", 
-            timezone_id="America/Sao_Paulo",
-            viewport=None, 
-            no_viewport=True,
-            # User agent comum para evitar bloqueios
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+    ultimo_erro = None
+    for tentativa in range(1, 4):
+        try:
+            browser_context = pw.chromium.launch_persistent_context(
+                executable_path=str(chromium_path),
+                user_data_dir=userdir, 
+                headless=False, 
+                args=browser_args, 
+                locale="pt-BR", 
+                timezone_id="America/Sao_Paulo",
+                viewport=None, 
+                no_viewport=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            )
+            # chegou aqui → sucesso
+            break
+        except Exception as e:
+            ultimo_erro = e
+            msg_err = str(e).lower()
+            # só faz retry em erros de contexto/browser fechado
+            if "closed" in msg_err or "target" in msg_err or "context" in msg_err:
+                _log(logger, f"⚠️ Tentativa {tentativa}/3 falhou ({e}). Aguardando {tentativa * 3}s...")
+                try: pw.stop()
+                except: pass
+                time.sleep(tentativa * 3)
+                pw = sync_playwright().start()  # reinicia o playwright também
+            else:
+                _log(logger, f"❌ Erro ao lançar navegador (não recuperável): {e}")
+                try: pw.stop()
+                except: pass
+                raise e
+    else:
+        # esgotou as 3 tentativas
+        try: pw.stop()
+        except: pass
+        raise RuntimeError(
+            f"Não foi possível lançar o Chrome após 3 tentativas. "
+            f"Último erro: {ultimo_erro}"
         )
-    except Exception as e:
-        _log(logger, "❌ Erro ao lançar navegador. Verifique se já não há uma janela aberta.")
-        pw.stop()
-        raise e
-    
+
     page = browser_context.pages[0]
     page.set_default_timeout(120000)
     try:
         page.goto("https://web.whatsapp.com")
         time.sleep(2)
         page.wait_for_selector('input[data-tab="3"], div[contenteditable="true"][data-tab="3"]',
-        timeout=120000)
+        timeout=200000)
         _log(logger, "✓ WhatsApp carregado.")
     except Exception as e:
         if is_auto: 
             try: page.screenshot(path="erro_login.png")
             except: pass
-        # Se falhar o login, não derruba tudo imediatamente, tenta fechar limpo
         raise e
     return pw, browser_context, page
+
+
+# ── CORREÇÃO 1: helper dedicado para abrir uma conversa ─────────────────────
+def _abrir_conversa(page, target, logger=None):
+    """
+    Busca o contato/grupo pelo campo de pesquisa e abre a conversa clicando
+    no PRIMEIRO resultado da lista. 
+
+    Lógica:
+      1. Digita o nome na search box
+      2. Aguarda até 5s pelos resultados aparecerem
+      3. Tenta clicar no primeiro item da lista de resultados
+      4. Se não encontrar nenhum seletor de resultado, pressiona Enter
+      5. Aguarda o campo de digitação da conversa (tab=10) para confirmar
+    """
+    SELETORES_SEARCH = [
+        'input[data-tab="3"]',
+        '#_r_9_',
+        'input[aria-label="Pesquisar ou começar uma nova conversa"]',
+        'input[aria-label="Search or start new chat"]',
+        'div[contenteditable="true"][data-tab="3"]',
+    ]
+
+    # Seletores do PRIMEIRO resultado da lista de pesquisa
+    SELETORES_PRIMEIRO_RESULTADO = [
+        'div[aria-label="Lista de chats"] div[role="listitem"]:first-child',
+        'div[role="listitem"][data-testid="cell-frame-container"]',
+        'div[data-testid="cell-frame-container"]',
+        'div[data-testid="chat-list-search-result-item"]',
+        'div._ak8q',
+        'span[data-testid="conversation-info-header-chat-title"]:first-of-type',
+    ]
+
+    search_box = None
+    for sel in SELETORES_SEARCH:
+        try:
+            el = page.locator(sel).first
+            el.wait_for(state='visible', timeout=5000)
+            search_box = el
+            _log(logger, f'Search box encontrada: {sel}')
+            break
+        except:
+            continue
+
+    if not search_box:
+        raise Exception('Campo de pesquisa do WhatsApp não encontrado.')
+
+    # digita o nome
+    search_box.click()
+    time.sleep(0.5)
+    search_box.fill(target)
+    time.sleep(1.0)  # aguarda os resultados carregarem
+
+    # tenta clicar no primeiro resultado visível
+    clicou = False
+    for sel in SELETORES_PRIMEIRO_RESULTADO:
+        try:
+            resultado = page.locator(sel).first
+            resultado.wait_for(state='visible', timeout=3000)
+            resultado.click(force=True)
+            _log(logger, f'✅ Conversa aberta via clique: {sel}')
+            clicou = True
+            break
+        except:
+            continue
+
+    if not clicou:
+        # fallback: Enter (comportamento anterior)
+        _log(logger, '⚠️ Nenhum seletor de resultado funcionou — usando Enter como fallback')
+        page.keyboard.press("Enter")
+
+    # aguarda a conversa abrir (chat box de digitação)
+    time.sleep(1.3)
+    try:
+        page.wait_for_selector(
+            'div[contenteditable="true"][data-tab="10"]',
+            state="visible",
+            timeout=15000
+        )
+        _log(logger, '✅ Chat box visível — conversa confirmada.')
+    except:
+        _log(logger, '⚠️ Chat box não encontrada em 15s — prosseguindo mesmo assim.')
+
 
 def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
     _log(logger, "📎 Preparando anexos...")
@@ -204,21 +308,18 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
         raise Exception("Nenhum seletor de tipo de arquivo funcionou.")
     
     # ESPERA DINÂMICA DE CARREGAMENTO (ARQUIVOS PESADOS)
-    # ================================================================
     _log(logger, f"⏳ Processando {len(lista_arquivos)} arquivo(s). Aguardando o WhatsApp carregar...")
     
-    # Seletor do botão de enviar (que só aparece quando o arquivo está pronto para legenda)
     xpath_btn_enviar = '//*[@data-icon="send"] | //div[@aria-label="Enviar"] | //span[@data-icon="send"] | //*[@id="app"]/div/div/div[3]/div/div[3]/div[2]/div/span/div/div/div/div[2]/div/div[2]/div[2]/span/div/div[1]/span' 
     
     try:
-        # Timeout de 5 minutos (300.000ms) para arquivos pesados, NÃO vai esperar 5 min se carregar em 10 segundos, ele segue na hora.
         page.wait_for_selector(xpath_btn_enviar, state="visible", timeout=300000)
         _log(logger, "✅ Arquivos carregados com sucesso.")
     except Exception as e:
         _log(logger, "❌ Timeout: Os arquivos demoraram mais de 5 minutos ou houve erro no upload.")
         raise e
 
-    # 3. Legenda (SEUS SELETORES)
+    # 3. Legenda
     if message:
         _log(logger, "✍️ Inserindo legenda...")
         seletores_legenda = [
@@ -232,11 +333,11 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
             'css=#app > div > div > div.x78zum5.xdt5ytf.x5yr21d > div > div.x10l6tqk.x13vifvy.x1o0tod.x78zum5.xh8yej3.x5yr21d.x6ikm8r.x10wlt62.x47corl > div.x9f619.x1n2onr6.x5yr21d.x6ikm8r.x10wlt62.x17dzmu4.x1i1dayz.x2ipvbc.xjdofhw.xyyilfv.x1iyjqo2.xpilrb4.x1t7ytsu.x1vb5itz.x12xzxwr > div > span > div > div > div > div.x1n2onr6.xupqr0c.x78zum5.x1r8uery.x1iyjqo2.xdt5ytf.x1hc1fzr.x6ikm8r.x10wlt62.x1anedsm > div > div.x78zum5.x1iyjqo2.xs83m0k.x1r8uery.xdt5ytf.x1qughib.x6ikm8r.x10wlt62 > div.x1c4vz4f.xs83m0k.xdl72j9.x1g77sc7.x78zum5.xozqiw3.x1oa3qoh.x12fk4p8.xeuugli.x2lwn1j.xl56j7k.x1q0g3np.x6s0dn4.x1n2onr6.xo8q3i6.x1y1aw1k.xwib8y2.x1c1uobl.xyri2b > div > div > div > div.x1n2onr6.xh8yej3.x1k70j0n.x14z9mp.xzueoph.x1lziwak.xisnujt.x14ug900.x1vvkbs.x126k92a.x1hx0egp.lexical-rich-text-input > div.x1hx0egp.x6ikm8r.x1odjw0f.x1k6rcq7.x1lkfr7t > p',
             'xpath=//*[@id="app"]/div/div/div[3]/div/div[3]/div[2]/div/span/div/div/div/div[2]/div/div[1]/div[3]/div/div/div/div[1]/div[1]/p',
             'xpath=/html/body/div[1]/div/div/div/div/div[3]/div/div[3]/div[2]/div/span/div/div/div/div[2]/div/div[1]/div[3]/div/div/div/div[1]/div[1]/p',
-            "xpath=//div[contains(@aria-label, 'legenda')]", # Português
-            "xpath=//div[contains(@aria-label, 'caption')]", # Inglês
-            "css=div[contenteditable='true'][role='textbox']", # Genérico funcional
-            "css=.lexical-rich-text-input [contenteditable='true']", # Estrutura técnica
-            "xpath=//footer//div[@contenteditable='true']" # Posição na tela
+            "xpath=//div[contains(@aria-label, 'legenda')]",
+            "xpath=//div[contains(@aria-label, 'caption')]",
+            "css=div[contenteditable='true'][role='textbox']",
+            "css=.lexical-rich-text-input [contenteditable='true']",
+            "xpath=//footer//div[@contenteditable='true']"
         ]
 
         try:
@@ -296,43 +397,19 @@ def enviar_arquivo_com_mensagem(page, file_path, message, logger=None):
         enviou = True
 
     if enviou:
-        time.sleep(15)  # aguarda confirmação de envio (necessário para arquivos maiores)
+        time.sleep(15)
         _log(logger, "🚀 Concluído!")
     else:
-        page.keyboard.press("Enter") # plano B
+        page.keyboard.press("Enter")
 
 def executar_envio(userdir, target, mode, message=None, file_path=None, logger=None, modo_execucao='manual'):
     pw, context, page = None, None, None
     
     try:
         pw, context, page = iniciar_driver(userdir, modo_execucao, logger)
-        seletores_search = [
-            'input[data-tab="3"]',
-            '#_r_9_',
-            'input[aria-label="Pesquisar ou começar uma nova conversa"]', # PT
-            'input[aria-label="Search or start new chat"]', # EN
-            'div[contenteditable="true"][data-tab="3"]', # antigo 
-        ]
-        search_box = None
-        for sel in seletores_search:
-            try:
-                el = page.locator(sel).first
-                el.wait_for(state='visible', timeout=10000)
-                search_box = el
-                _log(logger, f'Caixa de pesquisa encontrada: {sel}')
-                break
-            except:
-                continue
 
-        if not search_box:
-            raise Exception('Campo de pesquisa do WhatsApp não encontrado.')
-
-        search_box.click()
-        time.sleep(0.5)
-        search_box.fill(target)
-        time.sleep(1.5)
-        page.keyboard.press("Enter")
-        time.sleep(2.5)
+        # ── usa o helper corrigido para abrir a conversa ──────────────────
+        _abrir_conversa(page, target, logger)
 
         if mode == "text":
             chat_box = page.locator('div[contenteditable="true"][data-tab="10"]')
@@ -352,13 +429,10 @@ def executar_envio(userdir, target, mode, message=None, file_path=None, logger=N
     finally:
         try:
             if context:
-                for page in context.pages: page.close()
+                for p in context.pages: p.close()
         except:
             pass
         if pw: pw.stop()
-    #finally:
-        #if context: context.close()
-        #if pw: pw.stop()
 
 def run_auto(json_path):
     if not os.path.exists(json_path): return
