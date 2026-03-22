@@ -109,22 +109,63 @@ if __name__ == "__main__":
                 f.write(f"[{datetime.now()}] Erro ao abrir GUI: {str(e)}\n")
             raise e'''
 
-import multiprocessing
 import sys
 import os
-import io
-from datetime import datetime
 
-# ── BLOQUEIO: GUI não abre em modo executor ──────────────────────────
-if os.environ.get("EXECUTOR_MODE") == "1":
-    print("[BLOQUEIO] Tentativa de abrir GUI em modo executor — BLOQUEADO")
-    sys.exit(1)
+# ── DETECÇÃO ANTECIPADA DE MODO EXECUTOR ────────────────────────────────────
+# Feita em sys.argv ANTES de qualquer import — evita que argparse falhe
+# com paths contendo espaços e antes do freeze_support spawnar filhos
+def _get_executor_json():
+    """
+    Lê --executor-json do sys.argv manualmente.
+    argparse pode falhar com paths com espaços no Windows mesmo com aspas.
+    """
+    argv = sys.argv[1:]
+    for i, arg in enumerate(argv):
+        if arg == "--executor-json" and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith("--executor-json="):
+            return arg.split("=", 1)[1]
+    return None
+
+_EXECUTOR_JSON = _get_executor_json()
+
+# Se estamos em modo executor, seta a variável e executa direto
+if _EXECUTOR_JSON:
+    os.environ["EXECUTOR_MODE"] = "1"
+    # muda para o diretório base antes de qualquer import de core
+    if getattr(sys, 'frozen', False):
+        os.chdir(os.path.dirname(os.path.abspath(sys.executable)))
+    else:
+        os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    import io
+    if sys.stdout and hasattr(sys.stdout, "buffer"):
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    if sys.stderr and hasattr(sys.stderr, "buffer"):
+        try:
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    # importa e executa — nenhum import de UI aconteceu até aqui
+    sys.path.insert(0, os.getcwd())
+    from executor import main as executor_main
+    executor_main(_EXECUTOR_JSON)
+    sys.exit(0)
+
+# ── MODO GUI ─────────────────────────────────────────────────────────────────
+# Só chega aqui se NÃO for modo executor
+import multiprocessing
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
 
-    if len(sys.argv) > 1 and sys.argv[1] == "-m":
-        sys.exit(0)
+    import io
+    from datetime import datetime
 
     # stdout UTF-8
     if sys.stdout and hasattr(sys.stdout, "buffer"):
@@ -133,8 +174,6 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    import json
-    import argparse
     from core.paths import get_app_base_dir, get_whatsapp_profile_dir
 
     BASE_DIR    = get_app_base_dir()
@@ -144,23 +183,6 @@ if __name__ == "__main__":
     with open(os.path.join(BASE_DIR, "last_run_path.txt"), "a") as f:
         f.write(f"{datetime.now()}: Rodando em {BASE_DIR} | Perfil: {PROFILE_DIR}\n")
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--executor-json", help="Executa automação isolada")
-    parser.add_argument("--auto",     help="[legado] arquivo JSON de automação")
-    parser.add_argument("--task_id",  type=int)
-    args, _ = parser.parse_known_args()
-
-    # modo executor (agendador / CLI)
-    if args.executor_json:
-        from executor import main as executor_main
-        executor_main(args.executor_json)
-        sys.exit(0)
-
-    if args.auto:
-        print("[AVISO] Modo --auto foi migrado para executor.py")
-        sys.exit(1)
-
-    # modo GUI (PyWebView)
     try:
         from ui.main_window import App
         app = App()

@@ -163,25 +163,23 @@ class SchedulerDB:
     # =============================
     def listar_todos(self) -> List[Tuple]:
         """
-        Lista TODOS os agendamentos (qualquer status).
-
-        Returns:
-            List[Tuple]: Lista de tuplas com dados resumidos
+        Lista TODOS os agendamentos.
+        Abre uma conexão NOVA a cada chamada para garantir leitura atualizada
+        (evita o problema de snapshot do WAL mode com singleton).
         """
         conn = self._get_conn()
+        # força o WAL a ser mergeado antes de ler
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         cur = conn.cursor()
-
         cur.execute("""
-            SELECT 
-                id, task_name, target, mode, 
+            SELECT
+                id, task_name, target, mode,
                 scheduled_time, status, created_at
             FROM agendamentos
             ORDER BY scheduled_time DESC
         """)
-
         rows = cur.fetchall()
-        conn.close()
-
+        conn.close()   # ← ESSENCIAL: fecha para liberar o snapshot
         return rows
 
     def listar_pendentes(self) -> List[Tuple]:
@@ -209,17 +207,16 @@ class SchedulerDB:
         return rows
 
     def obter_por_id(self, task_id: int) -> Optional[dict]:
-        """Busca um agendamento pelo ID e retorna como dicionário"""
         conn = self._get_conn()
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-
         try:
             cur.execute("SELECT * FROM agendamentos WHERE id = ?", (task_id,))
             row = cur.fetchone()
             return dict(row) if row else None
         finally:
-            conn.close()
+            conn.close()   
 
     def atualizar_agendamento_completo(self, task_id, target, mode, message, file_path, scheduled_time):
         """Método para permitir a edição de um agendamento existente"""
@@ -242,28 +239,20 @@ class SchedulerDB:
 
     def obter_detalhes(self, identificador) -> Optional[dict]:
         """
-        Obtém detalhes completos de um agendamento.
-
-        Args:
-            identificador: ID (int) ou task_name (str)
-
-        Returns:
-            dict: Dados completos do agendamento, ou None se não encontrado
+        Sempre abre conexão nova para ter a leitura mais recente.
         """
         conn = self._get_conn()
-        conn.row_factory = sqlite3.Row  # Permite acesso por nome de coluna
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
         if isinstance(identificador, int):
-            cur.execute("SELECT * FROM agendamentos WHERE id = ?",
-                        (identificador,))
+            cur.execute("SELECT * FROM agendamentos WHERE id = ?", (identificador,))
         else:
-            cur.execute(
-                "SELECT * FROM agendamentos WHERE task_name = ?", (identificador,))
+            cur.execute("SELECT * FROM agendamentos WHERE task_name = ?", (identificador,))
 
         row = cur.fetchone()
-        conn.close()
-
+        conn.close()   # ← ESSENCIAL
         return dict(row) if row else None
 
     # =============================

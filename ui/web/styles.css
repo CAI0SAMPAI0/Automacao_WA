@@ -60,7 +60,7 @@ body {
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  transition: background .25s, color .25s;
+  /* CORREÇÃO: removido transition de background/color do body — causava repaint global */
 }
 
 /* ══════════════════════════════════════════
@@ -74,7 +74,6 @@ body::before {
     radial-gradient(ellipse 40% 30% at 80% 80%, rgba(155,127,244,.10) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
-  transition: opacity .25s;
 }
 body.light::before {
   background:
@@ -137,7 +136,7 @@ header {
   font-size: 15px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all .2s;
+  transition: border-color .2s;
   flex-shrink: 0;
 }
 .theme-btn:hover { border-color: var(--accent3); color: var(--text); }
@@ -178,14 +177,7 @@ header {
   font-family: var(--font-body);
   font-size: 13px; font-weight: 500;
   cursor: pointer;
-  transition: all .2s;
-  position: relative; overflow: hidden;
-}
-.tab::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(135deg, var(--accent3), var(--accent));
-  opacity: 0; transition: opacity .2s;
+  transition: border-color .2s, color .2s;
 }
 .tab:hover { border-color: var(--border2); color: var(--text); }
 .tab.active {
@@ -235,7 +227,7 @@ input, textarea, select {
   padding: 10px 14px;
   width: 100%;
   outline: none;
-  transition: border-color .2s, box-shadow .2s, background .25s, color .25s;
+  transition: border-color .2s;
 }
 input:focus, textarea:focus, select:focus {
   border-color: var(--accent3);
@@ -257,7 +249,7 @@ select option { background: var(--bg2); }
   color: var(--text2);
   font-size: 12px; font-weight: 500;
   cursor: pointer;
-  transition: all .18s;
+  transition: border-color .18s, color .18s;
 }
 .mode-pill:hover { border-color: var(--border2); color: var(--text); }
 .mode-pill.active {
@@ -274,14 +266,14 @@ body.light .mode-pill.active {
 .dt-row .field { flex: 1; }
 .dt-row .field.time-field { max-width: 110px; }
 
-/* ── checkbox toggle (JS-driven, sem input nativo) ── */
+/* ── toggle ── */
 .toggle-row {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
-  transition: background .25s, border-color .2s;
+  transition: border-color .2s;
   cursor: pointer;
   user-select: none;
 }
@@ -327,7 +319,7 @@ body.light .mode-pill.active {
   font-size: 13px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all .2s;
+  transition: background .15s, border-color .15s;
   flex-shrink: 0;
 }
 .modal-close:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
@@ -340,7 +332,7 @@ body.light .mode-pill.active {
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   cursor: pointer;
-  transition: border-color .2s, background .25s;
+  transition: border-color .2s;
 }
 .file-area:hover:not(.disabled) { border-color: var(--accent3); }
 .file-area.disabled { opacity: .45; cursor: not-allowed; }
@@ -365,22 +357,14 @@ body.light .mode-pill.active {
   font-family: var(--font-body);
   font-size: 13px; font-weight: 500;
   cursor: pointer;
-  transition: all .18s;
+  transition: opacity .18s, transform .18s;
   position: relative; overflow: hidden;
 }
-.btn::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: #fff; opacity: 0;
-  transition: opacity .15s;
-}
-.btn:active::after { opacity: .06; }
 .btn-primary {
   background: linear-gradient(135deg, var(--accent3), var(--accent));
   color: #fff;
-  box-shadow: 0 2px 16px rgba(108,82,224,.35);
 }
-.btn-primary:hover { box-shadow: 0 4px 24px rgba(108,82,224,.5); transform: translateY(-1px); }
+.btn-primary:hover { opacity: .9; transform: translateY(-1px); }
 .btn-ghost {
   background: var(--surface);
   border: 1px solid var(--border2);
@@ -389,7 +373,7 @@ body.light .mode-pill.active {
 .btn-ghost:hover { color: var(--text); border-color: var(--accent3); }
 .btn-danger { background: rgba(224,82,82,.15); border: 1px solid rgba(224,82,82,.3); color: var(--danger); }
 .btn-danger:hover { background: rgba(224,82,82,.25); }
-.btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
 
 /* ── loading spinner on button ── */
 .btn .spinner {
@@ -407,6 +391,8 @@ body.light .mode-pill.active {
 
 /* ══════════════════════════════════════════
    AGENDA CARDS
+   CORREÇÃO: removido box-shadow do hover — causa repaint completo no Qt WebEngine
+   Substituído por mudança só de border-color (compositor, sem repaint)
 ══════════════════════════════════════════ */
 .agenda-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -417,27 +403,23 @@ body.light .mode-pill.active {
   font-size: 13px; font-weight: 600;
   color: var(--text2); letter-spacing: .04em; text-transform: uppercase;
 }
-.sync-badge {
-  font-size: 10px;
-  color: var(--text3);
-  display: flex; align-items: center; gap: 4px;
-}
-.sync-badge.ok  { color: var(--success); }
-.sync-badge.err { color: var(--danger); }
 
 .card {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
-  transition: border-color .2s, box-shadow .2s, background .25s;
-  animation: cardIn .25s ease;
+  /* CORREÇÃO: só border-color na transition — box-shadow causava repaint pesado no Qt */
+  transition: border-color .2s;
+  animation: cardIn .2s ease;
+  will-change: border-color;
 }
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.card:hover { border-color: var(--border2); box-shadow: 0 2px 16px rgba(0,0,0,.12); }
+/* CORREÇÃO: sem box-shadow no hover */
+.card:hover { border-color: var(--border2); }
 
 .card-top    { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .card-target { font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--text); }
@@ -461,7 +443,7 @@ body.light .mode-pill.active {
   border-radius: 6px;
   font-size: 11px; font-weight: 500;
   cursor: pointer;
-  transition: all .15s; border: none;
+  transition: background .15s; border: none;
 }
 .card-btn-edit { background: rgba(108,82,224,.12); color: var(--accent); border: 1px solid rgba(108,82,224,.2); }
 .card-btn-edit:hover { background: rgba(108,82,224,.22); }
@@ -493,11 +475,10 @@ body.light .mode-pill.active {
   border-radius: var(--radius);
   font-size: 13px; font-weight: 500;
   color: #fff;
-  backdrop-filter: blur(10px);
+  
   animation: toastIn .25s ease;
   text-align: center;
   display: flex; align-items: center; gap: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,.35);
 }
 .toast.success  { background: rgba(30,110,70,.97);  border: 1px solid rgba(82,201,122,.4); }
 .toast.error    { background: rgba(150,35,35,.97);  border: 1px solid rgba(224,82,82,.4); }
@@ -512,7 +493,7 @@ body.light .mode-pill.active {
 .modal-overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.55);
-  backdrop-filter: blur(4px);
+  
   z-index: 1000;
   display: none;
   align-items: center; justify-content: center;
@@ -520,8 +501,6 @@ body.light .mode-pill.active {
 }
 body.light .modal-overlay { background: rgba(90,62,200,.12); }
 .modal-overlay.open { display: flex; }
-
-/* modal de fins de semana sempre acima dos outros modais */
 #modalWk { z-index: 2000; }
 .modal {
   background: var(--bg2);
@@ -529,9 +508,7 @@ body.light .modal-overlay { background: rgba(90,62,200,.12); }
   border-radius: 16px;
   padding: 24px;
   width: 100%; max-width: 420px;
-  box-shadow: var(--shadow);
   animation: modalIn .22s ease;
-  transition: background .25s;
 }
 @keyframes modalIn {
   from { opacity: 0; transform: scale(.95); }
@@ -548,7 +525,7 @@ body.light .modal-overlay { background: rgba(90,62,200,.12); }
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   text-align: center; cursor: pointer;
-  transition: all .18s;
+  transition: border-color .18s;
 }
 .wk-opt:hover          { border-color: var(--accent3); }
 .wk-opt .wk-ico        { font-size: 20px; display: block; margin-bottom: 4px; }
@@ -561,7 +538,6 @@ body.light .modal-overlay { background: rgba(90,62,200,.12); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-/* ── date input ── */
 input[type=date]::-webkit-calendar-picker-indicator {
   filter: invert(.6); cursor: pointer;
 }
@@ -570,7 +546,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
 }
 
 /* ══════════════════════════════════════════
-   SUB-TABS (Simples / Lote)
+   SUB-TABS
 ══════════════════════════════════════════ */
 .sub-tabs {
   display: flex; gap: 6px;
@@ -585,7 +561,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   font-size: 12px; font-weight: 500;
   color: var(--text2);
   cursor: pointer;
-  transition: all .18s;
+  transition: background .18s, color .18s;
 }
 .sub-tab.active {
   background: var(--surface);
@@ -605,7 +581,6 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   line-height: 1.5;
 }
 
-/* btn-parse */
 .btn-parse {
   padding: 10px 14px;
   background: var(--accent3);
@@ -615,10 +590,10 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   font-size: 12px; font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: all .18s;
+  transition: opacity .18s;
   flex-shrink: 0;
 }
-.btn-parse:hover { background: var(--accent); }
+.btn-parse:hover { opacity: .85; }
 
 /* ══════════════════════════════════════════
    LOTE — CARDS DE DESTINATÁRIO
@@ -656,7 +631,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   color: var(--text3);
   font-size: 11px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all .15s;
+  transition: background .15s, border-color .15s;
 }
 .lote-card-remove:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
 
@@ -676,7 +651,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   color: var(--text2);
   font-size: 11px; font-weight: 500;
   cursor: pointer;
-  transition: all .15s;
+  transition: border-color .15s, color .15s;
 }
 .lote-pill:hover { border-color: var(--border2); color: var(--text); }
 .lote-pill.active {
@@ -718,8 +693,6 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
 /* ══════════════════════════════════════════
    RESPONSIVIDADE
 ══════════════════════════════════════════ */
-
-/* Janela larga: mais espaço nos painéis */
 @media (min-width: 600px) {
   #app { max-width: 100%; }
   .panel { padding: 20px 28px 28px; }
@@ -728,7 +701,6 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   .modal { max-width: 500px; }
 }
 
-/* Textarea cresce com a janela */
 #message, .lote-textarea {
   min-height: 100px;
 }
@@ -739,17 +711,14 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   #message { min-height: 180px; }
 }
 
-/* Botões de ação sempre visíveis no fundo */
 .btn-row { margin-top: 4px; }
 .btn { min-height: 44px; }
 
-/* Mode pills mais espaçosos em telas largas */
 @media (min-width: 500px) {
   .mode-pill { padding: 9px 10px; font-size: 13px; }
   .lote-pill { padding: 6px 8px;  font-size: 12px; }
 }
 
-/* Cards de agendamento mais largos */
 @media (min-width: 600px) {
   .card { padding: 16px 18px; }
   .card-target { font-size: 15px; }
@@ -763,7 +732,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   border: 1px solid var(--border);
   border-radius: var(--radius-s);
   overflow: hidden;
-  transition: border-color .2s, box-shadow .2s;
+  transition: border-color .2s;
 }
 .date-wrap:focus-within {
   border-color: var(--accent3);
@@ -799,7 +768,6 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   background: var(--bg2);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
-  box-shadow: 0 8px 32px rgba(0,0,0,.4);
   padding: 12px;
   z-index: 100000;
   display: none;
@@ -850,7 +818,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   border-radius: 6px;
   cursor: pointer;
   color: var(--text2);
-  transition: all .12s;
+  transition: background .12s;
 }
 .cal-day:hover { background: var(--surface); color: var(--text); }
 .cal-day.today { color: var(--accent); font-weight: 600; }
@@ -867,7 +835,7 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
 .card-btn-retry:hover { background: rgba(224,164,82,.25); }
 
 /* ══════════════════════════════════════════
-   CUSTOM SELECT (substitui <select> nativo)
+   CUSTOM SELECT
 ══════════════════════════════════════════ */
 .custom-select {
   position: relative;
@@ -903,14 +871,13 @@ body.light input[type=date]::-webkit-calendar-picker-indicator {
   border-radius: 0 0 var(--radius-s) var(--radius-s);
   z-index: 500;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
 }
 .custom-select.open .cs-options { display: block; }
 .cs-option {
   padding: 10px 14px;
   font-size: 13px; color: var(--text2);
   cursor: pointer;
-  transition: background .12s, color .12s;
+  transition: background .12s;
 }
 .cs-option:hover { background: var(--surface); color: var(--text); }
 .cs-option.active { color: var(--accent); font-weight: 500; }

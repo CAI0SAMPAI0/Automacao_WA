@@ -15,7 +15,6 @@ function loadTheme() {
 
 /* ══════════════════════════════════════════
    STATE
-   (var em vez de let para evitar TDZ no onclick inline)
 ══════════════════════════════════════════ */
 var filePath        = null;
 var editFilePath    = null;
@@ -31,6 +30,27 @@ var loteFileModalIdx = null;
 var calTargetId     = null;
 var calYear         = 0;
 var calMonth        = 0;
+
+/* ══════════════════════════════════════════
+   CORREÇÃO BUG 1: controle de polling
+   O polling é pausado quando qualquer modal está aberto.
+   Isso impede que loadCards() destrua o DOM durante edição.
+══════════════════════════════════════════ */
+var _pollingPaused = false;
+
+function _anyModalOpen() {
+  return !!document.querySelector('.modal-overlay.open');
+}
+
+function pausePolling() {
+  _pollingPaused = true;
+}
+
+function resumePolling() {
+  _pollingPaused = false;
+  // força refresh imediato ao fechar o modal
+  loadCards(true);
+}
 
 /* ══════════════════════════════════════════
    INIT
@@ -49,7 +69,14 @@ function init() {
   setupCardDelegation();
   refreshCount();
   loadCards(true);
-  setInterval(() => { loadCards(); refreshCount(); }, 2000);
+  // 3s é suficiente para status em tempo real e elimina o piscar do Qt WebEngine
+  // que re-renderiza a cada escrita de DOM com intervalo curto
+  setInterval(() => {
+    if (!_pollingPaused && !_anyModalOpen()) {
+      loadCards();
+      refreshCount();
+    }
+  }, 3000);
 }
 
 /* ── delegação de cliques nos cards ── */
@@ -135,7 +162,6 @@ function esc(s) {
 
 /* ══════════════════════════════════════════
    CALENDÁRIO POPUP
-   — popup é fixed no body, fora de overflow:hidden
 ══════════════════════════════════════════ */
 function openCal(inputId) {
   calTargetId = inputId;
@@ -149,7 +175,6 @@ function openCal(inputId) {
 
   renderCal();
 
-  // posiciona: tenta abrir acima, se não couber abre abaixo
   const wrap  = el.closest('.date-wrap') || el;
   const rect  = wrap.getBoundingClientRect();
   const popH  = 270;
@@ -225,7 +250,7 @@ function pickCalDay(d) {
 }
 
 /* ══════════════════════════════════════════
-   TOGGLES JS-only
+   TOGGLES
 ══════════════════════════════════════════ */
 function toggleDaily() {
   isDailyOn = !isDailyOn;
@@ -308,7 +333,6 @@ async function handleEditFile() {
 
 /* ══════════════════════════════════════════
    ENVIO SIMPLES — ENVIAR AGORA
-   Contador incrementa só quando executar de fato (via __onEnvioResult)
 ══════════════════════════════════════════ */
 async function handleEnviarAgora() {
   const target  = document.getElementById('target').value.trim();
@@ -324,7 +348,6 @@ async function handleEnviarAgora() {
 window.__onEnvioResult = function(payload) {
   setLoading(document.getElementById('btnEnviar'), false);
   if (payload.ok) {
-    // incrementa contador só aqui (execução real)
     refreshCount();
     toast('Mensagem enviada com sucesso!','success');
     resetForm();
@@ -335,7 +358,6 @@ window.__onEnvioResult = function(payload) {
 
 /* ══════════════════════════════════════════
    ENVIO SIMPLES — AGENDAR
-   Contador NÃO incrementa aqui — só quando executar
 ══════════════════════════════════════════ */
 async function handleAgendar() {
   const target  = document.getElementById('target').value.trim();
@@ -356,7 +378,7 @@ async function handleAgendar() {
   });
   setLoading(btn, false);
   if (r.error) { toast(r.error,'error'); return; }
-  toast('Agendado! O contador só atualiza quando for executado.','success');
+  toast('Agendado!','success');
   resetForm(); loadCards(true);
 }
 
@@ -460,7 +482,6 @@ function validateLote() {
 
 /* ══════════════════════════════════════════
    LOTE — ENVIAR AGORA
-   Contador incrementa N vezes (1 por envio bem-sucedido)
 ══════════════════════════════════════════ */
 async function handleEnviarLote() {
   if (!validateLote()) return;
@@ -469,7 +490,6 @@ async function handleEnviarLote() {
   toast(`Enviando para ${loteItems.length} destinatário(s)...`,'info');
   const r = await pywebview.api.enviar_lote({ itens: loteItems });
   if (r.error) { setLoading(btn,false); toast(r.error,'error'); return; }
-  // resultado real chega via __onLoteResult
 }
 
 window.__onLoteResult = function(payload) {
@@ -485,14 +505,12 @@ window.__onLoteResult = function(payload) {
 };
 
 window.__onLoteProgress = function(payload) {
-  // progresso parcial: atualiza contador e mostra toast por envio
   refreshCount();
   toast(`✓ Enviado para "${payload.target}" (${payload.ok_count}/${payload.total})`,'info');
 };
 
 /* ══════════════════════════════════════════
    LOTE — AGENDAR
-   Contador NÃO incrementa aqui — só quando executar
 ══════════════════════════════════════════ */
 function handleAgendarLote() {
   if (!validateLote()) return;
@@ -552,91 +570,117 @@ function resolveWk(v) {
 
 /* ══════════════════════════════════════════
    CARDS DE AGENDAMENTOS
-   — simples: card individual
-   — lote: card agrupado expansível
+   CORREÇÃO BUG 1: diff cirúrgico real.
+   - Nunca recria um card existente — só atualiza badge e botões via DOM cirúrgico
+   - Cards são identificados por data-id ou data-batch (nunca pelo índice)
+   - Reordenação só acontece se a ordem mudou de fato
 ══════════════════════════════════════════ */
 async function loadCards(force) {
   try {
     const r    = await pywebview.api.listar_agendamentos();
     const list = r.agendamentos || [];
-    const container = document.getElementById('cardList');
 
-    if (!list.length) {
-      if (!container.querySelector('.no-items')) {
-        container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
-        container.dataset.lastKey = '';
-      }
-      return;
-    }
-
-    const ni = container.querySelector('.no-items');
-    if (ni) ni.remove();
-
-    // chave de detecção: status + horário + target
-    const newKey = list.map(a => {
-      const k = a.batch_id || String(a.id);
-      return k + ':' + a.status + ':' + a.scheduled_time + ':' + a.target;
-    }).join('|');
-
-    if (!force && container.dataset.lastKey === newKey) return;
-    container.dataset.lastKey = newKey;
-
-    // mapa dos cards existentes
-    const existingCards = new Map();
-    container.querySelectorAll('[data-id],[data-batch]').forEach(el => {
-      existingCards.set(el.dataset.batch || el.dataset.id, el);
-    });
-
-    // remove os que sumiram
-    const newKeys = new Set(list.map(a => String(a.batch_id || a.id)));
-    existingCards.forEach((el, k) => { if (!newKeys.has(k)) el.remove(); });
-
-    list.forEach((a, idx) => {
-      const key      = String(a.batch_id || a.id);
-      const existing = existingCards.get(key);
-
-      if (!existing) {
-        // card novo — insere
-        const tmp = document.createElement('div');
-        tmp.innerHTML = a.is_lote ? renderLoteCard(a) : renderCard(a);
-        const newEl = tmp.firstElementChild;
-        const allCards = [...container.children];
-        if (idx >= allCards.length) container.appendChild(newEl);
-        else container.insertBefore(newEl, allCards[idx]);
-      } else {
-        // card existente — atualiza só o badge de status sem recriar o DOM
-        const badge = existing.querySelector('.card-badge:not([style])');
-        if (badge) {
-          badge.className   = 'card-badge ' + statusBadgeClass(a.status);
-          badge.textContent = statusLabel(a.status);
-        }
-        // atualiza badges dos itens do lote (expansível)
-        if (a.is_lote && a.itens) {
-          const rows = existing.querySelectorAll('.lote-item-row');
-          a.itens.forEach((item, i) => {
-            if (rows[i]) {
-              const b = rows[i].querySelector('.card-badge');
-              if (b) {
-                b.className   = 'card-badge ' + statusBadgeClass(item.status);
-                b.textContent = statusLabel(item.status);
-              }
-            }
-          });
-        }
-        // habilita/desabilita botões conforme status
-        const running = a.status === 'running';
-        existing.querySelectorAll('[data-action="edit"],[data-action="edit-lote"]')
-          .forEach(b => b.disabled = running);
-        existing.querySelectorAll('[data-action="delete"],[data-action="delete-lote"]')
-          .forEach(b => b.disabled = running);
-        const rb = existing.querySelector('[data-action="retry"]');
-        if (rb) rb.style.display = a.status === 'failed' ? 'inline-flex' : 'none';
-      }
-    });
+    // toda escrita de DOM acontece num único frame — elimina repaints parciais
+    requestAnimationFrame(() => _applyCardDiff(list, force));
 
   } catch(e) {
-    // silencioso — não mostra erro visual no polling automático
+    // silencioso
   }
+}
+
+function _applyCardDiff(list, force) {
+  const container = document.getElementById('cardList');
+
+  if (!list.length) {
+    if (!container.querySelector('.no-items')) {
+      container.innerHTML = '<div class="no-items"><span class="ico">📭</span>Nenhum agendamento ainda</div>';
+      container.dataset.lastKey = '';
+    }
+    return;
+  }
+
+  const ni = container.querySelector('.no-items');
+  if (ni) ni.remove();
+
+  // chave cobre: existência + status + botão retry
+  // NÃO inclui scheduled_time nem target — eles não mudam após criação
+  const newKey = list.map(a => {
+    const k = a.batch_id || String(a.id);
+    return k + ':' + a.status;
+  }).join('|');
+
+  if (!force && container.dataset.lastKey === newKey) return;
+  container.dataset.lastKey = newKey;
+
+  // índice dos cards existentes
+  const existingCards = new Map();
+  container.querySelectorAll('[data-card-key]').forEach(el => {
+    existingCards.set(el.dataset.cardKey, el);
+  });
+
+  // determina o que precisa ser feito ANTES de tocar no DOM
+  const toInsert = [];   // { idx, a, key }
+  const toUpdate = [];   // { existing, a }
+  const newKeys  = new Set(list.map(a => String(a.batch_id || a.id)));
+
+  list.forEach((a, idx) => {
+    const key = String(a.batch_id || a.id);
+    const el  = existingCards.get(key);
+    if (!el) toInsert.push({ idx, a, key });
+    else     toUpdate.push({ el, a });
+  });
+
+  // 1. remove os que sumiram (uma única passagem)
+  existingCards.forEach((el, k) => { if (!newKeys.has(k)) el.remove(); });
+
+  // 2. insere novos (snapshot do container APÓS remoções, ANTES das inserções)
+  if (toInsert.length) {
+    const snapshot = [...container.children].filter(c => !c.classList.contains('no-items'));
+    toInsert.forEach(({ idx, a, key }) => {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = a.is_lote ? renderLoteCard(a) : renderCard(a);
+      const newEl = tmp.firstElementChild;
+      newEl.dataset.cardKey = key;
+      const ref = snapshot[idx] || null;
+      if (ref) container.insertBefore(newEl, ref);
+      else     container.appendChild(newEl);
+    });
+  }
+
+  // 3. atualiza apenas o que mudou nos cards existentes (sem tocar no resto do DOM)
+  toUpdate.forEach(({ el, a }) => {
+    // badge principal
+    const badge = el.querySelector('.card-badge-status');
+    if (badge) {
+      const nc = 'card-badge card-badge-status ' + statusBadgeClass(a.status);
+      const nl = statusLabel(a.status);
+      if (badge.className   !== nc) badge.className   = nc;
+      if (badge.textContent !== nl) badge.textContent = nl;
+    }
+
+    // badges dos itens do lote
+    if (a.is_lote && a.itens) {
+      el.querySelectorAll('.lote-item-row').forEach((row, i) => {
+        const b = row.querySelector('.card-badge');
+        if (!b || !a.itens[i]) return;
+        const nc = 'card-badge ' + statusBadgeClass(a.itens[i].status);
+        const nl = statusLabel(a.itens[i].status);
+        if (b.className   !== nc) b.className   = nc;
+        if (b.textContent !== nl) b.textContent = nl;
+      });
+    }
+
+    // botões — só escreve se o valor mudou
+    const running = a.status === 'running';
+    el.querySelectorAll('[data-action="edit"],[data-action="edit-lote"],[data-action="delete"],[data-action="delete-lote"]')
+      .forEach(b => { if (b.disabled !== running) b.disabled = running; });
+
+    const rb = el.querySelector('[data-action="retry"]');
+    if (rb) {
+      const show = a.status === 'failed' ? 'inline-flex' : 'none';
+      if (rb.style.display !== show) rb.style.display = show;
+    }
+  });
 }
 
 function renderCard(a) {
@@ -648,7 +692,7 @@ function renderCard(a) {
       <div class="card-target">📱 ${esc(a.target)}</div>
       <div class="card-date">📅 ${esc(a.scheduled_time)} &nbsp;·&nbsp; ${modeLabel(a.mode)}</div>
     </div>
-    <span class="card-badge ${statusBadgeClass(a.status)}">${statusLabel(a.status)}</span>
+    <span class="card-badge card-badge-status ${statusBadgeClass(a.status)}">${statusLabel(a.status)}</span>
   </div>
   <div class="card-actions">
     <button class="card-btn card-btn-edit"  ${running?'disabled':''} data-action="edit"   data-id="${a.id}">✏ Editar</button>
@@ -673,7 +717,7 @@ function renderLoteCard(a) {
       <div class="card-date">📅 ${esc(a.scheduled_time)} &nbsp;·&nbsp; ${a.count} destinatário(s)</div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
-      <span class="card-badge ${statusBadgeClass(a.status)}">${statusLabel(a.status)}</span>
+      <span class="card-badge card-badge-status ${statusBadgeClass(a.status)}">${statusLabel(a.status)}</span>
       <span class="lote-chevron">▾</span>
     </div>
   </div>
@@ -704,7 +748,7 @@ function statusLabel(s) {
 function modeLabel(m) { return {text:'Texto',file:'Arquivo',file_text:'Arq+Texto'}[m]||m; }
 
 /* ══════════════════════════════════════════
-   REENVIAR (status failed)
+   REENVIAR
 ══════════════════════════════════════════ */
 async function handleReenviar(id) {
   const r = await pywebview.api.reenviar_agendamento(id);
@@ -721,17 +765,17 @@ async function handleDelete(id, target) {
   const r = await pywebview.api.excluir_agendamento(id);
   if (r.error) { toast(r.error,'error'); return; }
   toast('Agendamento excluído','info');
-  const el = document.querySelector(`[data-id="${id}"]`);
-  if (el) el.remove();
-  delete cardStates[id];
+  loadCards(true);
 }
 
 /* ══════════════════════════════════════════
-   EDIT MODAL — todos os status editáveis
+   EDIT MODAL
+   CORREÇÃO: pausePolling() ao abrir, resumePolling() ao fechar
 ══════════════════════════════════════════ */
 async function openEdit(id) {
+  pausePolling();   // CORREÇÃO: suspende o polling enquanto modal está aberto
   const r = await pywebview.api.obter_agendamento(id);
-  if (r.error) { toast(r.error,'error'); return; }
+  if (r.error) { resumePolling(); toast(r.error,'error'); return; }
   const a = r.agendamento;
   editTaskId=id; editFilePath=a.file_path||null;
   document.getElementById('editTarget').value  = a.target||'';
@@ -751,7 +795,10 @@ function applyEditMode(mode) {
   document.getElementById('editMsgField').style.display  = mode==='file'?'none':'';
   document.getElementById('editFileArea').style.display  = mode==='text'?'none':'';
 }
-function closeEditModal() { document.getElementById('modalEdit').classList.remove('open'); }
+function closeEditModal() {
+  document.getElementById('modalEdit').classList.remove('open');
+  resumePolling();  // CORREÇÃO: retoma polling e força refresh
+}
 
 /* ══════════════════════════════════════════
    CUSTOM SELECT
@@ -807,11 +854,12 @@ async function handleSalvarEdit() {
   setLoading(btn, false);
   if (r.error) { toast(r.error,'error'); return; }
   toast('Agendamento atualizado!','success');
-  closeEditModal(); loadCards(true);
+  closeEditModal();   // já chama resumePolling()
+  loadCards(true);
 }
 
 /* ══════════════════════════════════════════
-   EXEC COUNT — lê do Python (fonte da verdade)
+   EXEC COUNT
 ══════════════════════════════════════════ */
 async function refreshCount() {
   const r = await pywebview.api.get_execucoes();
@@ -860,24 +908,24 @@ function toast(msg, type='info') {
 
 /* ══════════════════════════════════════════
    EDITAR / EXCLUIR LOTE
+   CORREÇÃO: pausePolling() ao abrir, resumePolling() ao fechar
 ══════════════════════════════════════════ */
 var editLoteBatchId  = null;
 var editLoteItens    = [];
 var isEditLoteDailyOn = false;
 
 async function openEditLote(batchId) {
+  pausePolling();   // CORREÇÃO
   const r = await pywebview.api.obter_lote(batchId);
-  if (r.error) { toast(r.error, 'error'); return; }
+  if (r.error) { resumePolling(); toast(r.error, 'error'); return; }
   editLoteBatchId = batchId;
   editLoteItens   = r.itens;
 
-  // preenche data/hora
   document.getElementById('editLoteDate').value = r.date_str || '';
   document.getElementById('editLoteTime').value = r.time_str || '';
   isEditLoteDailyOn = false;
   document.getElementById('editLoteDailyUI').classList.remove('on');
 
-  // renderiza itens
   renderEditLoteItens();
   document.getElementById('modalEditLote').classList.add('open');
 }
@@ -930,6 +978,7 @@ function toggleEditLoteDaily() {
 function closeEditLoteModal() {
   document.getElementById('modalEditLote').classList.remove('open');
   editLoteBatchId = null; editLoteItens = [];
+  resumePolling();   // CORREÇÃO
 }
 
 async function handleSalvarEditLote() {
@@ -951,7 +1000,7 @@ async function handleSalvarEditLote() {
   setLoading(btn, false);
   if (r.error) { toast(r.error,'error'); return; }
   toast('Lote atualizado!','success');
-  closeEditLoteModal();
+  closeEditLoteModal();   // já chama resumePolling()
   loadCards(true);
 }
 

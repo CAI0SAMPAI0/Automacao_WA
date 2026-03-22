@@ -73,6 +73,28 @@ except Exception as _e:
     print(f"[MIGRAÇÃO] Ignorada: {_e}")
 
 
+def _db_read_connection():
+    """
+    CORREÇÃO BUG 2: Retorna uma conexão NOVA ao banco para leituras.
+
+    O SQLite em modo WAL funciona por snapshots: uma conexão que fica aberta
+    vê sempre o banco como estava quando ela foi criada, ignorando tudo que
+    o executor (outro processo) gravou depois.
+
+    A solução é abrir uma conexão nova a cada leitura — o sqlite3 resolve
+    automaticamente o WAL e entrega os dados mais recentes.
+    SEMPRE chame conn.close() após usar.
+    """
+    import sqlite3
+    from core.paths import get_user_data_dir
+    db_path = Path(get_user_data_dir()) / "scheduler.db"
+    conn = sqlite3.connect(str(db_path))
+    # força merge do WAL antes de ler para garantir dados do executor
+    conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 class Api:
 
     # ── contadores ────────────────────────────────────────────────────────
@@ -81,22 +103,22 @@ class Api:
 
     # ── agendamentos ──────────────────────────────────────────────────────
     def listar_agendamentos(self):
-        """Retorna agendamentos, agrupando lotes pelo batch_id."""
-        import sqlite3
-        from core.paths import get_user_data_dir
-        db_path = Path(get_user_data_dir()) / "scheduler.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, task_name, target, mode, scheduled_time,
-                   status, created_at, batch_id, message, file_path
-            FROM agendamentos
-            ORDER BY scheduled_time DESC
-        """)
-        rows = [dict(r) for r in cur.fetchall()]
-        conn.close()
+        """
+        CORREÇÃO BUG 2: abre conexão nova a cada chamada para ver dados frescos do WAL.
+        Antes usava sqlite3.connect() sem fechar, travado no snapshot inicial.
+        """
+        conn = _db_read_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT id, task_name, target, mode, scheduled_time,
+                       status, created_at, batch_id, message, file_path
+                FROM agendamentos
+                ORDER BY scheduled_time DESC
+            """)
+            rows = [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()  # ESSENCIAL: libera o snapshot para próxima leitura
 
         singles = []
         batches = {}
@@ -129,7 +151,9 @@ class Api:
                 "status": row["status"], "batch_id": None,
             })
         for bid, b in batches.items():
-            targets = ", ".join(i["target"] for i in b["itens"][:3])
+            # strip do prefixo [LOTE] que pode ter sido gravado por versões anteriores
+            clean = lambda t: t.replace("[LOTE] ", "").replace("[LOTE]", "").strip()
+            targets = ", ".join(clean(i["target"]) for i in b["itens"][:3])
             if len(b["itens"]) > 3:
                 targets += f" +{len(b['itens'])-3}"
             result.append({
@@ -146,9 +170,17 @@ class Api:
         return {"agendamentos": result}
 
     def obter_agendamento(self, task_id: int):
-        data = db.obter_por_id(int(task_id))
-        if not data:
+        conn = _db_read_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM agendamentos WHERE id = ?", (int(task_id),))
+            row = cur.fetchone()
+        finally:
+            conn.close()
+
+        if not row:
             return {"error": "Agendamento nao encontrado"}
+        data = dict(row)
         try:
             dt = datetime.fromisoformat(data["scheduled_time"])
             data["date_str"] = dt.strftime("%d/%m/%Y")
@@ -158,15 +190,14 @@ class Api:
         return {"agendamento": data}
 
     def obter_lote(self, batch_id: str):
-        import sqlite3
-        from core.paths import get_user_data_dir
-        db_path = Path(get_user_data_dir()) / "scheduler.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM agendamentos WHERE batch_id=? ORDER BY id LIMIT 1", (batch_id,))
-        row = cur.fetchone()
-        conn.close()
+        conn = _db_read_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM agendamentos WHERE batch_id=? ORDER BY id LIMIT 1", (batch_id,))
+            row = cur.fetchone()
+        finally:
+            conn.close()
+
         if not row:
             return {"error": "Lote nao encontrado"}
         row = dict(row)
@@ -201,14 +232,14 @@ class Api:
             return {"error": str(e)}
 
     def excluir_lote(self, batch_id: str):
-        import sqlite3
-        from core.paths import get_user_data_dir
-        db_path = Path(get_user_data_dir()) / "scheduler.db"
-        conn = sqlite3.connect(str(db_path))
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM agendamentos WHERE batch_id=?", (batch_id,))
-        ids = [r[0] for r in cur.fetchall()]
-        conn.close()
+        conn = _db_read_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM agendamentos WHERE batch_id=?", (batch_id,))
+            ids = [r[0] for r in cur.fetchall()]
+        finally:
+            conn.close()
+
         for tid in ids:
             windows_scheduler.delete_windows_task(tid)
             db.deletar(tid)
@@ -273,17 +304,17 @@ class Api:
                 if nova_dt < datetime.now():
                     return {"error": "Data/hora no passado"}
 
-            import sqlite3
-            from core.paths import get_user_data_dir
-            db_path = Path(get_user_data_dir()) / "scheduler.db"
-            conn = sqlite3.connect(str(db_path))
-            cur = conn.cursor()
-            cur.execute("SELECT id, task_name FROM agendamentos WHERE batch_id=? LIMIT 1", (batch_id,))
-            row = cur.fetchone()
-            conn.close()
+            conn = _db_read_connection()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT id, task_name FROM agendamentos WHERE batch_id=? LIMIT 1", (batch_id,))
+                row = cur.fetchone()
+            finally:
+                conn.close()
+
             if not row:
                 return {"error": "Lote nao encontrado"}
-            t_id, task_name = row
+            t_id, task_name = row["id"], row["task_name"]
 
             app_path  = Path(BASE_DIR)
             json_path = app_path / "scheduled_tasks" / f"task_{t_id}.json"
@@ -308,7 +339,7 @@ class Api:
                 json.dump(json_cfg, f, indent=2, ensure_ascii=False)
 
             db.atualizar_agendamento_completo(
-                t_id, f"[LOTE] {targets_resumo}", "text", None, None, nova_dt)
+                t_id, targets_resumo, "text", None, None, nova_dt)
             windows_scheduler.delete_windows_task(t_id)
             windows_scheduler.create_windows_task(
                 t_id, task_name, time_str, date_str,
@@ -416,19 +447,11 @@ class Api:
             return {"error": str(e)}
 
     def _executar_lote_sequencial(self, itens, temp_dir, ts):
-        """
-        Abre o WhatsApp UMA vez e envia para todos em sequência.
-
-        ── CORREÇÃO ──
-        Substituída a lógica manual de busca+Enter pelo helper
-        _abrir_conversa() de core.automation, que clica no primeiro
-        resultado da lista em vez de depender do Enter.
-        """
         import pyperclip
         from core.automation import (
             iniciar_driver,
             enviar_arquivo_com_mensagem,
-            _abrir_conversa,          # ← helper corrigido
+            _abrir_conversa,
         )
         from core.paths import get_whatsapp_profile_dir
 
@@ -437,7 +460,6 @@ class Api:
         erros    = []
         pw = context = page = None
 
-        # Seletores para limpar a search box entre envios
         SELETORES_SEARCH = [
             'input[data-tab="3"]',
             '#_r_9_',
@@ -447,7 +469,6 @@ class Api:
         ]
 
         def _reset_search_box():
-            """Volta para a search box limpa após cada envio."""
             try:
                 page.keyboard.press("Escape")
                 time_module.sleep(0.3)
@@ -486,13 +507,11 @@ class Api:
                 file_path = item.get("filePath") or None
 
                 try:
-                    # Limpa a search box a partir do 2º item
                     if i > 0:
                         time_module.sleep(1.0)
                         _reset_search_box()
                         time_module.sleep(0.5)
 
-                    # ── usa o helper corrigido (clica no 1º resultado) ──
                     _abrir_conversa(page, target)
 
                     if mode == "text":
@@ -510,7 +529,6 @@ class Api:
                     ok_count += 1
                     contador_execucao(incrementar=True)
 
-                    # notifica JS do progresso parcial
                     try:
                         win = webview.windows[0]
                         payload = json.dumps({

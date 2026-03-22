@@ -1,13 +1,3 @@
-"""
-build_exe.py — Build completo do Study Practices
-  1. Limpa arquivos temporários
-  2. Compila o .exe com PyInstaller
-  3. Gera o instalador com Inno Setup
-
-Uso:
-    python build_exe.py
-"""
-
 import os
 import sys
 import shutil
