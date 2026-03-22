@@ -5,6 +5,9 @@
   <div style="display: flex; justify-content: center; gap: 20px;">
     <img src="screenshots/home_light.png" alt="Modo Claro" width="45%"/>
     <img src="screenshots/home_dark.png" alt="Modo Escuro" width="45%"/>
+    <img src="screenshots/lote.png" alt="Mensagem em Sequência" width="45%"/>
+    <img src="screenshots/todos_os_dias.png" alt="Todos os Dias" width="45%"/>
+    <img src="screenshots/agendamento.png" alt="Agendamento" width="45%"/>
   </div>
   <br>
   <h3>📅 Agendamento Fácil</h3>
