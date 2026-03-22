@@ -1,477 +1,213 @@
-# 📱 Automação WhatsApp — Sistema de Envio em Massa
+# 🤖 Automação WhatsApp — Bot Multi-Funcional
 
 <div align="center">
 
-![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white)
-![Selenium](https://img.shields.io/badge/Selenium-WebDriver-green?logo=selenium&logoColor=white)
-![WhatsApp](https://img.shields.io/badge/WhatsApp-Web-25D366?logo=whatsapp&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Playwright](https://img.shields.io/badge/Playwright-Browser%20Automation-45ba4b?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+[![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Sistema automatizado de envio de mensagens em massa via WhatsApp Web com suporte a anexos e personalização**
-
-[Instalação](#️-instalação) • [Uso](#-uso) • [Documentação](#-documentação)
+**Sistema desktop completo de automação para WhatsApp com interface gráfica HTML/CSS/JS, backend Python/Playwright e instalador próprio.**
 
 </div>
 
 ---
 
-## 📋 Índice
+## 🎯 Sobre o Projeto
 
-- [Visão Geral](#-visão-geral)
-- [Problema que Resolve](#-problema-que-resolve)
-- [Principais Funcionalidades](#-principais-funcionalidades)
-- [Casos de Uso](#-casos-de-uso)
-- [Tecnologias Utilizadas](#-tecnologias-utilizadas)
-- [Instalação](#️-instalação)
-- [Configuração](#️-configuração)
-- [Uso](#-uso)
-- [Estrutura do Projeto](#-estrutura-do-projeto)
-- [Avisos Importantes](#️-avisos-importantes)
-- [Licença](#-licença)
+Sistema desktop de automação para WhatsApp desenvolvido com:
+- **Playwright** (Python) para controle automatizado do browser
+- **HTML/CSS/JavaScript** para interface gráfica moderna
+- **Python** para backend e lógica de negócio
+- **SQLite** para persistência de dados
+- **Instalador próprio** para distribuição fácil
 
 ---
 
-## 🎯 Visão Geral
+## 🔧 Problema que Resolve
 
-**Automação WhatsApp** é um sistema Python que automatiza o envio de mensagens em massa através do WhatsApp Web. Utilizando Selenium WebDriver, o sistema interage programaticamente com a interface web do WhatsApp para enviar mensagens personalizadas, anexos e mídias para listas de contatos de forma automatizada.
+### Desafios de Comunicação em Massa
 
-Ideal para empresas, freelancers, educadores e profissionais que precisam se comunicar com múltiplos contatos de forma eficiente sem recorrer a soluções pagas ou APIs oficiais.
+**Para Empresas e Profissionais:**
+- ❌ Envio manual demorado (horas copiando/colando)
+- ❌ Impossível personalizar em escala
+- ❌ Perda de leads por demora em responder
+- ❌ Trabalho repetitivo sem rastreamento
 
----
+### Solução Automatizada
 
-## 💡 Problema que Resolve
-
-### **Automação de Comunicação em Massa no WhatsApp**
-
-#### 1. **Envio Manual Repetitivo**
-- **Problema**: Enviar a mesma mensagem para 50+ contatos manualmente leva horas
-- **Solução**: Automação que processa listas completas em minutos
-- **Impacto**: Redução de 95% no tempo gasto com envio de mensagens
-
-#### 2. **Limitações de APIs Oficiais**
-- **Problema**: WhatsApp Business API custa $100-500/mês e exige aprovação
-- **Solução**: Uso gratuito do WhatsApp Web sem custos ou aprovação
-- **Impacto**: Economia de R$ 6.000+/ano para pequenas empresas
-
-#### 3. **Falta de Personalização em Massa**
-- **Problema**: Mensagens genéricas não geram engajamento
-- **Solução**: Templates com variáveis personalizadas por contato
-- **Impacto**: Aumento de 60% na taxa de resposta
-
-#### 4. **Gestão Manual de Listas de Contatos**
-- **Problema**: Planilhas desorganizadas dificultam campanhas
-- **Solução**: Importação automática via CSV/Excel com validação
-- **Impacto**: Redução de 80% em erros de envio
-
-#### 5. **Anexos Manuais Demorados**
-- **Problema**: Enviar PDFs/imagens para cada contato individualmente
-- **Solução**: Anexos automáticos em lote
-- **Impacto**: 200+ arquivos enviados sem intervenção manual
+✅ **Envio em Massa** - 100+ mensagens em minutos  
+✅ **Personalização** - Variáveis dinâmicas `{nome}`, `{empresa}`  
+✅ **Auto-responder** - Bot responde fora do horário  
+✅ **Interface Gráfica** - App desktop profissional  
+✅ **Instalador Próprio** - Distribuição sem Python  
+✅ **Analytics** - Dashboard com gráficos Chart.js  
 
 ---
 
-## ✨ Principais Funcionalidades
+## ⚡ Funcionalidades
 
-### 📤 **Envio em Massa**
+### 📤 Envio em Massa
+- Importação CSV/Excel
+- Mensagens personalizadas com variáveis
+- Anexos (imagens, PDFs, vídeos)
+- Delay anti-ban inteligente
+- Retry automático
 
-- Envio para **listas ilimitadas** de contatos
-- Suporte a **CSV, Excel (XLSX)** e arquivos de texto
-- **Delay configurável** entre mensagens para evitar bloqueios
-- **Retry automático** em caso de falha de envio
-- **Log detalhado** de sucessos e falhas
+### 🤖 Respostas Automáticas
+- Regras por palavras-chave
+- Mensagens de ausência
+- Templates rápidos
 
-### ✍️ **Personalização de Mensagens**
+### 🖥️ Interface Gráfica (HTML/CSS/JS)
+- Dashboard interativo
+- Editor WYSIWYG
+- Drag & drop de arquivos
+- Tema dark/light
+- Gráficos Chart.js
 
-- **Templates com variáveis**: `{nome}`, `{empresa}`, `{produto}`, etc.
-- **Mensagens HTML** formatadas (negrito, itálico, quebras de linha)
-- **Múltiplos templates** para diferentes campanhas
-- **Preview** antes do envio em massa
+### 📊 Analytics
+- Estatísticas em tempo real
+- Taxa de entrega
+- Histórico SQLite
+- Export PDF/CSV
 
-### 📎 **Suporte a Anexos**
-
-- **Imagens**: JPG, PNG, GIF, WEBP
-- **Documentos**: PDF, DOCX, XLSX, TXT
-- **Vídeos**: MP4, AVI, MOV
-- **Áudio**: MP3, WAV, OGG
-- **Anexo único** ou **múltiplos arquivos** por mensagem
-
-### 🛡️ **Recursos de Segurança**
-
-- **Detecção anti-ban**: respeita limites do WhatsApp
-- **Randomização de delays**: comportamento humanizado
-- **Modo headless opcional**: execução sem interface gráfica
-- **Backup de sessão**: mantém login entre execuções
-- **Validação de números**: verifica formato antes do envio
-
-### 📊 **Relatórios e Logs**
-
-- **Relatório CSV** com status de cada envio
-- **Logs timestamped** para auditoria
-- **Estatísticas em tempo real** (enviados/falhados/pendentes)
-- **Captura de tela** em caso de erro
+### 📦 Instalador
+- Setup .exe para Windows
+- One-click install
+- Auto-update
 
 ---
 
-## 🎯 Casos de Uso
+## 🛠️ Stack Tecnológica
 
-### **Marketing e Vendas**
-- Campanhas promocionais
-- Lançamentos de produtos
-- Follow-up de leads
-- Distribuição de catálogos (PDF)
-
-### **Educação**
-- Avisos para alunos e pais
-- Distribuição de materiais didáticos
-- Lembretes de provas e trabalhos
-- Comunicados de eventos
-
-### **Recursos Humanos**
-- Comunicados internos
-- Distribuição de holerites
-- Convites para treinamentos
-- Anúncios de vagas
-
-### **Eventos**
-- Convites personalizados
-- Confirmação de presença
-- Lembretes de data e horário
-- Envio de ingressos (PDF)
-
-### **Atendimento ao Cliente**
-- Notificações de pedidos
-- Atualizações de status
-- Pesquisas de satisfação
-- Suporte pós-venda
+| Camada | Tecnologia |
+|--------|-----------|
+| **Automação** | Playwright (Python) |
+| **Backend** | Python 3.8+ |
+| **Frontend** | HTML5 + CSS3 + JS |
+| **Gráficos** | Chart.js |
+| **Database** | SQLite |
+| **Comunicação** | WebSockets |
+| **Instalador** | PyInstaller + Inno Setup |
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+## 📁 Estrutura
 
-| Componente | Tecnologia | Propósito |
-|------------|-----------|-----------|
-| **Automação Web** | Selenium WebDriver | Controle do navegador |
-| **Navegador** | Chrome/Chromium + ChromeDriver | Interface com WhatsApp Web |
-| **Processamento de Dados** | Pandas | Leitura de CSV/Excel |
-| **Validação** | Regex | Validação de números de telefone |
-| **Logging** | Python Logging | Rastreamento de execução |
-| **Configuração** | YAML/JSON | Gerenciamento de configurações |
+```
+Automacao_WA/
+├── app/
+│   ├── frontend/          # HTML/CSS/JS
+│   │   ├── index.html
+│   │   ├── css/
+│   │   └── js/
+│   ├── backend/           # Python
+│   │   ├── main.py
+│   │   ├── automation/
+│   │   │   └── playwright_bot.py
+│   │   └── database/
+│   │       └── db_manager.py
+│   └── data/
+│       └── whatsapp.db    # SQLite
+├── installer/
+│   ├── build_exe.py       # PyInstaller
+│   └── setup.iss          # Inno Setup
+└── requirements.txt
+```
 
 ---
 
-## ⚙️ Instalação
+## 🚀 Instalação
 
-### **Pré-requisitos**
+### Via Instalador (Usuário)
 
-- Python 3.9 ou superior
-- Google Chrome instalado
-- Conta WhatsApp ativa
-- Planilha com lista de contatos
+```bash
+# Baixe: WhatsAppAutomacao_Setup.exe
+# Execute e siga o wizard
+```
 
-### **1. Clone o Repositório**
+### Via Python (Desenvolvedor)
 
 ```bash
 git clone https://github.com/CAI0SAMPAI0/Automacao_WA.git
 cd Automacao_WA
-```
-
-### **2. Crie um Ambiente Virtual**
-
-```bash
-python -m venv venv
-
-# Linux/Mac
-source venv/bin/activate
-
-# Windows
-venv\Scripts\activate
-```
-
-### **3. Instale as Dependências**
-
-```bash
 pip install -r requirements.txt
-```
-
-### **4. Baixe o ChromeDriver**
-
-O sistema baixa automaticamente a versão compatível na primeira execução, mas você pode fazer manualmente:
-
-```bash
-# Linux
-wget https://chromedriver.storage.googleapis.com/LATEST_RELEASE
-wget https://chromedriver.storage.googleapis.com/$(cat LATEST_RELEASE)/chromedriver_linux64.zip
-unzip chromedriver_linux64.zip
-
-# Windows - baixe de https://chromedriver.chromium.org/downloads
-```
-
----
-
-## 🔧 Configuração
-
-### **1. Configure o Arquivo de Contatos**
-
-Crie um arquivo CSV ou Excel (`contatos.csv` ou `contatos.xlsx`):
-
-```csv
-nome,numero,empresa
-João Silva,5521987654321,Empresa XYZ
-Maria Santos,5511912345678,Startup ABC
-Pedro Costa,5531998765432,Freelancer
-```
-
-**Formato do número**: `[DDI][DDD][Número]` - Exemplo: `5521987654321`
-
-### **2. Configure a Mensagem**
-
-Edite `config/mensagem_template.txt`:
-
-```
-Olá {nome}! 👋
-
-Espero que esteja tudo bem com você e a {empresa}.
-
-Gostaria de apresentar nossa nova solução que pode ajudar seu negócio.
-
-Podemos agendar uma conversa?
-
-Atenciosamente,
-Equipe de Vendas
-```
-
-### **3. Configure Parâmetros**
-
-Edite `config/config.yaml`:
-
-```yaml
-# Configurações de envio
-delay_min: 5          # Segundos mínimos entre mensagens
-delay_max: 10         # Segundos máximos entre mensagens
-retry_attempts: 3     # Tentativas em caso de falha
-headless: false       # true = sem interface gráfica
-
-# Configurações de segurança
-anti_ban:
-  max_per_hour: 50    # Máximo de mensagens por hora
-  pause_after: 20     # Pausa após X mensagens
-  pause_duration: 300 # Duração da pausa (segundos)
-
-# Anexos
-attachments:
-  - path: "arquivos/catalogo.pdf"
-    type: "document"
+playwright install chromium
+python app/backend/main.py
 ```
 
 ---
 
 ## 📖 Uso
 
-### **Modo Básico (Apenas Texto)**
-
-```bash
-python enviar_mensagens.py --contatos contatos.csv --template mensagem_template.txt
-```
-
-### **Com Anexos**
-
-```bash
-python enviar_mensagens.py \
-  --contatos contatos.csv \
-  --template mensagem_template.txt \
-  --anexo arquivos/catalogo.pdf
-```
-
-### **Modo Headless (Sem Interface)**
-
-```bash
-python enviar_mensagens.py \
-  --contatos contatos.csv \
-  --template mensagem_template.txt \
-  --headless
-```
-
-### **Com Delay Customizado**
-
-```bash
-python enviar_mensagens.py \
-  --contatos contatos.csv \
-  --template mensagem_template.txt \
-  --delay-min 8 \
-  --delay-max 15
-```
-
-### **Testar com Alguns Contatos**
-
-```bash
-python enviar_mensagens.py \
-  --contatos contatos.csv \
-  --template mensagem_template.txt \
-  --limite 5  # Envia apenas para os 5 primeiros
-```
-
----
-
-## 📁 Estrutura do Projeto
-
-```
-Automacao_WA/
-├── enviar_mensagens.py        # Script principal
-├── whatsapp_bot.py            # Classe de automação
-├── requirements.txt           # Dependências Python
-├── config/
-│   ├── config.yaml            # Configurações gerais
-│   ├── mensagem_template.txt  # Template de mensagem
-│   └── contatos_exemplo.csv   # Exemplo de lista
-├── arquivos/
-│   └── *.pdf                  # Anexos para envio
-├── logs/
-│   ├── envio_YYYYMMDD.log     # Logs de execução
-│   └── relatorio_YYYYMMDD.csv # Relatório de envios
-├── screenshots/
-│   └── erro_*.png             # Capturas de tela de erros
-├── session/
-│   └── whatsapp_session/      # Dados de sessão do WhatsApp
-├── utils/
-│   ├── validator.py           # Validação de números
-│   ├── logger.py              # Sistema de logs
-│   └── reporter.py            # Gerador de relatórios
-├── docs/
-│   ├── GUIA_COMPLETO.md       # Documentação detalhada
-│   └── FAQ.md                 # Perguntas frequentes
-└── README.md
-```
+1. **Iniciar aplicação** → Interface abre em `http://localhost:5000`
+2. **Login WhatsApp** → Escanear QR Code
+3. **Importar contatos** → CSV/Excel
+4. **Criar mensagem** com variáveis `{nome}`, `{empresa}`
+5. **Configurar delay** (5-15s recomendado)
+6. **Enviar** e monitorar dashboard
 
 ---
 
 ## ⚠️ Avisos Importantes
 
-### **Termos de Uso do WhatsApp**
+### Termos WhatsApp
 
-Este projeto é para fins **educacionais e uso pessoal**. O uso massivo pode violar os Termos de Serviço do WhatsApp. **Use com responsabilidade.**
+> ⚡ **ATENÇÃO**: WhatsApp **não permite** automação não oficial. Riscos:
+> - Banimento de conta
+> - Bloqueio de número
+> - Restrições de envio
 
-#### ❌ **NÃO USE PARA**:
-- SPAM ou mensagens não solicitadas
-- Correntes ou pirâmides
-- Conteúdo ilegal ou ofensivo
-- Violação de privacidade (LGPD/GDPR)
-- Automação comercial sem consentimento
+**Recomendações:**
+- Use contas secundárias
+- Delays ≥10s
+- Limite <100 msgs/dia
+- Obtenha consentimento (LGPD)
 
-#### ✅ **USE PARA**:
-- Comunicação legítima com contatos que consentiram
-- Avisos internos em empresas/escolas
-- Notificações de serviços contratados
-- Comunicação com clientes existentes
+### Alternativa Oficial
 
-### **Riscos de Banimento**
-
-- **Limite diário**: ~250-300 mensagens
-- **Limite horário**: ~50 mensagens
-- **Intervalos**: Mínimo de 5 segundos entre mensagens
-- **Conteúdo**: Evite palavras como "promoção", "grátis", "clique aqui"
-
-### **Proteção de Dados (LGPD)**
-
-- Obtenha **consentimento explícito** antes de enviar mensagens
-- Ofereça opção de **opt-out** em todas as mensagens
-- Armazene dados de forma **segura e criptografada**
-- Respeite solicitações de **exclusão de dados**
+Para uso comercial: **WhatsApp Business API** oficial
+- [business.whatsapp.com](https://business.whatsapp.com/)
 
 ---
 
-## 🔒 Boas Práticas
+## 💼 Casos de Uso
 
-1. **Sempre teste com 5-10 contatos** antes de envios em massa
-2. **Use delays realistas** (8-15 segundos)
-3. **Faça envios em horários comerciais** (9h-18h)
-4. **Evite fins de semana** para mensagens profissionais
-5. **Mantenha listas atualizadas** (remova números inativos)
-6. **Monitore relatórios** de entrega e bloqueios
-7. **Pause campanhas** se detectar alto índice de falhas
-
----
-
-## 🐛 Solução de Problemas
-
-### **ChromeDriver não encontrado**
-```bash
-# Baixe manualmente e coloque na pasta do projeto
-wget https://chromedriver.storage.googleapis.com/LATEST_RELEASE
-```
-
-### **Sessão do WhatsApp expira**
-```bash
-# Delete a pasta de sessão e escaneie QR code novamente
-rm -rf session/whatsapp_session
-```
-
-### **Mensagens não estão sendo enviadas**
-- Verifique se o formato do número está correto
-- Confirme que o contato está salvo ou adicione o DDD
-- Aumente o delay entre mensagens
-
-### **Erro "element not found"**
-- WhatsApp Web mudou a interface
-- Atualize o projeto para a versão mais recente
-
----
-
-## 📊 Métricas de Performance
-
-Com configurações padrão:
-- **Velocidade**: 300-400 mensagens/hora
-- **Taxa de sucesso**: 95-98%
-- **Consumo de memória**: ~200-300 MB
-- **Tempo médio por mensagem**: 10-12 segundos
+- **E-commerce**: Carrinho abandonado
+- **Consultórios**: Lembretes de consulta
+- **Vendas**: Follow-up de leads
+- **Marketing**: Campanhas segmentadas
+- **Professores**: Envio de atividades
 
 ---
 
 ## 🗺️ Roadmap
 
-- [ ] Interface gráfica (GUI) com Tkinter
-- [ ] Suporte a mensagens agendadas
-- [ ] Integração com Google Sheets
-- [ ] Dashboard web para monitoramento
-- [ ] Suporte a grupos do WhatsApp
-- [ ] Estatísticas de engajamento
-- [ ] API REST para integração
-
----
-
-## 🤝 Contribuição
-
-Contribuições são bem-vindas! Veja [CONTRIBUTING.md](CONTRIBUTING.md) para guidelines.
-
-### **Áreas que Precisam de Ajuda**
-- Detecção automática de mudanças no WhatsApp Web
-- Melhorias na taxa de sucesso de envio
-- Otimização de consumo de recursos
-- Documentação em inglês
+- [ ] Suporte para grupos
+- [ ] Integração CRM (Pipedrive, HubSpot)
+- [ ] Dashboard web multi-usuário
+- [ ] Migração para WhatsApp Business API
 
 ---
 
 ## 📄 Licença
 
-MIT License - veja [LICENSE](LICENSE) para detalhes.
-
-**Disclaimer**: Este projeto não é afiliado, associado, autorizado ou endossado pelo WhatsApp LLC.
+MIT © 2025 - Uso educacional e pessoal
 
 ---
 
 ## 👨‍💻 Autor
 
-**Caio Sampaio**
-- GitHub: [@CAI0SAMPAI0](https://github.com/CAI0SAMPAI0)
-- LinkedIn: [Caio Sampaio](https://linkedin.com/in/caio-sampaio)
+**Caio Sampaio** - [@CAI0SAMPAI0](https://github.com/CAI0SAMPAI0)
 
 ---
 
 <div align="center">
 
-**⭐ Se este projeto economizou seu tempo, considere dar uma estrela!**
+**⚠️ Use com responsabilidade e ética!**
 
-**⚠️ Use com responsabilidade e respeite a privacidade dos usuários**
-
-Made with ❤️ by Caio Sampaio
+Made in Brazil
 
 </div>
